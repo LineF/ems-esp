@@ -1,0 +1,16 @@
+I have Jumper JP1 closed but sometimes when I connect the device to the EMS bus it drives too much current to load the capacitors so that the RC300 gets too low voltage and reboots.
+You can open JP1 and insert R7 to reduce the current for the initial load (perhaps try 47 or 100 Ohms).
+
+With JP2 and JP3 you can select the supply voltage:
+	- JP2 closed and JP3 open: configure your buck converter to 3.3V!
+	  It directly supplys the Node-MCU. Selecting voltage too high damages the ESP8266!
+	- JP2 open and JP3 closed: configure your buck converter to 5V.
+	  The 5V will supply the gateway interface (LM393 etc) and the DS18B20.
+	  The linear voltage regulator in the Node-MCU will provide the 3.3V for the ESP8266.
+
+J3 and J4 provide connections for I2C sensors. I will try to connect an BMP180 air pressure sensor
+and add the feature to the software - but that will take some time...
+
+You can see some photos and get a case for the PCB at https://www.thingiverse.com/thing:4084768
+
+Martin
