@@ -49,7 +49,7 @@ const uint8_t ems_crc_table[] = {0x00, 0x02, 0x04, 0x06, 0x08, 0x0A, 0x0C, 0x0E,
                                  0xF9, 0xFB, 0xFD, 0xFF, 0xF1, 0xF3, 0xF5, 0xF7, 0xE9, 0xEB, 0xED, 0xEF, 0xE1, 0xE3, 0xE5, 0xE7};
 
 const uint8_t  TX_WRITE_TIMEOUT_COUNT = 2;       // 3 retries before timeout
-const uint32_t EMS_BUS_TIMEOUT        = 15000;   // timeout in ms before recognizing the ems bus is offline (15 seconds)
+const uint32_t EMS_BUS_TIMEOUT        = 45000;   // timeout in ms before recognizing the ems bus is offline (45 seconds)
 const uint32_t EMS_POLL_TIMEOUT       = 5000000; // timeout in microseconds before recognizing the ems bus is offline (5 seconds)
 
 /*
@@ -76,7 +76,7 @@ bool ems_isHT3() {
     return (EMS_Sys_Status.emsIDMask == 0x80);
 }
 
-// init stats and counters and buffers
+// init EMS device values, counters and buffers
 void ems_init() {
     ems_clearDeviceList(); // init the device map
 
@@ -209,7 +209,7 @@ void ems_init() {
     strlcpy(EMS_Thermostat.version, "?", sizeof(EMS_Thermostat.version));
 
     // default logging is none
-    ems_setLogging(EMS_SYS_LOGGING_DEFAULT);
+    ems_setLogging(EMS_SYS_LOGGING_DEFAULT, true);
 }
 
 // Getters and Setters for parameters
@@ -281,27 +281,33 @@ _EMS_SYS_LOGGING ems_getLogging() {
 }
 
 void ems_setLogging(_EMS_SYS_LOGGING loglevel, uint16_t type_id) {
-    if (loglevel <= EMS_SYS_LOGGING_JABBER) {
-        EMS_Sys_Status.emsLogging = loglevel;
+    EMS_Sys_Status.emsLogging_typeID = type_id;
+    ems_setLogging(EMS_SYS_LOGGING_WATCH, false);
+}
 
-        if (loglevel == EMS_SYS_LOGGING_NONE) {
-            myDebug_P(PSTR("System Logging set to None"));
-        } else if (loglevel == EMS_SYS_LOGGING_BASIC) {
-            myDebug_P(PSTR("System Logging set to Basic"));
-        } else if (loglevel == EMS_SYS_LOGGING_VERBOSE) {
-            myDebug_P(PSTR("System Logging set to Verbose"));
-        } else if (loglevel == EMS_SYS_LOGGING_THERMOSTAT) {
-            myDebug_P(PSTR("System Logging set to Thermostat only"));
-        } else if (loglevel == EMS_SYS_LOGGING_SOLARMODULE) {
-            myDebug_P(PSTR("System Logging set to Solar Module only"));
-        } else if (loglevel == EMS_SYS_LOGGING_RAW) {
-            myDebug_P(PSTR("System Logging set to Raw mode"));
-        } else if (loglevel == EMS_SYS_LOGGING_JABBER) {
-            myDebug_P(PSTR("System Logging set to Jabber mode"));
-        } else if (loglevel == EMS_SYS_LOGGING_WATCH) {
-            EMS_Sys_Status.emsLogging_typeID = type_id;
-            myDebug_P(PSTR("System Logging set to Watch mode"));
-        }
+void ems_setLogging(_EMS_SYS_LOGGING loglevel, bool quiet) {
+    EMS_Sys_Status.emsLogging = loglevel;
+
+    if (quiet) {
+        return; // no reporting to console
+    }
+
+    if (loglevel == EMS_SYS_LOGGING_NONE) {
+        myDebug_P(PSTR("System Logging set to None"));
+    } else if (loglevel == EMS_SYS_LOGGING_BASIC) {
+        myDebug_P(PSTR("System Logging set to Basic"));
+    } else if (loglevel == EMS_SYS_LOGGING_VERBOSE) {
+        myDebug_P(PSTR("System Logging set to Verbose"));
+    } else if (loglevel == EMS_SYS_LOGGING_THERMOSTAT) {
+        myDebug_P(PSTR("System Logging set to Thermostat only"));
+    } else if (loglevel == EMS_SYS_LOGGING_SOLARMODULE) {
+        myDebug_P(PSTR("System Logging set to Solar Module only"));
+    } else if (loglevel == EMS_SYS_LOGGING_RAW) {
+        myDebug_P(PSTR("System Logging set to Raw mode"));
+    } else if (loglevel == EMS_SYS_LOGGING_JABBER) {
+        myDebug_P(PSTR("System Logging set to Jabber mode"));
+    } else if (loglevel == EMS_SYS_LOGGING_WATCH) {
+        myDebug_P(PSTR("System Logging set to Watch mode"));
     }
 }
 
@@ -736,12 +742,14 @@ void ems_parseTelegram(uint8_t * telegram, uint8_t length) {
      * It may happen that we were interrupted (for instance by WIFI activity) and the 
      * buffer isn't valid anymore, so we must not answer at all...
      */
+    /*
     if (EMS_Sys_Status.emsRxStatus != EMS_RX_STATUS_IDLE) {
         if (EMS_Sys_Status.emsLogging > EMS_SYS_LOGGING_NONE) {
             myDebug_P(PSTR("** Warning, we missed the bus - Rx non-idle!"));
         }
         return;
     }
+    */
 
     /*
      * check if we just received one byte
@@ -1194,8 +1202,9 @@ void _process_RC30StatusMessage(_EMS_RxTelegram * EMS_RxTelegram) {
 void _process_RC35StatusMessage(_EMS_RxTelegram * EMS_RxTelegram) {
     // exit if...
     // - the 15th byte (second from last) is 0x00, which I think is flow temp, means HC is not is use
-    // - its not a broadcast, so destination is 0x00
-    if ((EMS_RxTelegram->data[14] == 0x00) || (EMS_RxTelegram->dest != EMS_ID_NONE)) {
+    // - its not a broadcast, so destination is 0x00 (not in use since 6/1/2020 - issue #238)
+    // if ((EMS_RxTelegram->data[14] == 0x00) || (EMS_RxTelegram->dest != EMS_ID_NONE)) {
+    if (EMS_RxTelegram->data[14] == 0x00) {
         return;
     }
 
@@ -1228,7 +1237,7 @@ void _process_EasyStatusMessage(_EMS_RxTelegram * EMS_RxTelegram) {
     _setValue(EMS_RxTelegram, &EMS_Thermostat.hc[hc].setpoint_roomTemp, EMS_OFFSET_EasyStatusMessage_setpoint); // is * 100
 }
 
-// 0x01D7, 0x01D8
+// Mixer - 0x01D7, 0x01D8
 void _process_MMPLUSStatusMessage(_EMS_RxTelegram * EMS_RxTelegram) {
     uint8_t hc = (EMS_RxTelegram->type - EMS_TYPE_MMPLUSStatusMessage_HC1); // 0 to 3
     if (hc >= EMS_THERMOSTAT_MAXHC) {
@@ -1241,9 +1250,9 @@ void _process_MMPLUSStatusMessage(_EMS_RxTelegram * EMS_RxTelegram) {
     _setValue(EMS_RxTelegram, &EMS_Mixing.hc[hc].valveStatus, EMS_OFFSET_MMPLUSStatusMessage_valve_status);
 }
 
-// 0xAB
+// Mixer - 0xAB
 void _process_MMStatusMessage(_EMS_RxTelegram * EMS_RxTelegram) {
-    uint8_t hc               = 0; // fixed, for 0xAB
+    uint8_t hc               = 0; // fixed, for 0xAB (HC1 only)
     EMS_Mixing.hc[hc].active = true;
 
     _setValue(EMS_RxTelegram, &EMS_Mixing.hc[hc].flowTemp, EMS_OFFSET_MMStatusMessage_flow_temp);
@@ -1365,6 +1374,11 @@ int8_t _getHeatingCircuit(_EMS_RxTelegram * EMS_RxTelegram) {
     // check to see we have an active HC. Assuming first byte must have some bit status set.
     // see https://github.com/proddy/EMS-ESP/issues/238
     if (EMS_RxTelegram->data[0] == 0x00) {
+        return -1;
+    }
+
+    // ignore telegrams that have no data, or only a single byte
+    if (EMS_RxTelegram->data_length <= 1) {
         return -1;
     }
 
@@ -1925,8 +1939,8 @@ void ems_getThermostatValues() {
  * Generic function to return various settings from the thermostat
  */
 void ems_getBoilerValues() {
-    ems_doReadCommand(EMS_TYPE_UBAMonitorFast, EMS_Boiler.device_id);        // get boiler stats, instead of waiting 10secs for the broadcast
-    ems_doReadCommand(EMS_TYPE_UBAMonitorSlow, EMS_Boiler.device_id);        // get more boiler stats, instead of waiting 60secs for the broadcast
+    ems_doReadCommand(EMS_TYPE_UBAMonitorFast, EMS_Boiler.device_id);        // get boiler data, instead of waiting 10secs for the broadcast
+    ems_doReadCommand(EMS_TYPE_UBAMonitorSlow, EMS_Boiler.device_id);        // get more boiler data, instead of waiting 60secs for the broadcast
     ems_doReadCommand(EMS_TYPE_UBAParameterWW, EMS_Boiler.device_id);        // get Warm Water values
     ems_doReadCommand(EMS_TYPE_UBAParametersMessage, EMS_Boiler.device_id);  // get MC10 boiler values
     ems_doReadCommand(EMS_TYPE_UBATotalUptimeMessage, EMS_Boiler.device_id); // get uptime from boiler
@@ -2119,21 +2133,31 @@ void ems_printDevices() {
                 have_unknowns = true;
             }
 
-            myDebug_P(PSTR(" %s: %s%s%s (DeviceID:0x%02X ProductID:%d Version:%s)"),
-                      device_type,
-                      COLOR_BOLD_ON,
-                      device_string,
-                      COLOR_BOLD_OFF,
-                      it->device_id,
-                      it->product_id,
-                      it->version);
-        }
+            if ((it->device_type == EMS_DEVICE_TYPE_THERMOSTAT) && (EMS_Sys_Status.emsMasterThermostat == it->product_id)) {
+                myDebug_P(PSTR(" %s: %s%s%s (DeviceID:0x%02X ProductID:%d Version:%s) [master]"),
+                          device_type,
+                          COLOR_BOLD_ON,
+                          device_string,
+                          COLOR_BOLD_OFF,
+                          it->device_id,
+                          it->product_id,
+                          it->version);
 
+            } else {
+                myDebug_P(PSTR(" %s: %s%s%s (DeviceID:0x%02X ProductID:%d Version:%s)"),
+                          device_type,
+                          COLOR_BOLD_ON,
+                          device_string,
+                          COLOR_BOLD_OFF,
+                          it->device_id,
+                          it->product_id,
+                          it->version);
+            }
+        }
         myDebug_P(PSTR("")); // newline
 
         if (have_unknowns) {
-            myDebug_P(
-                PSTR("You have a device is that is not yet known by EMS-ESP. Please report this as a GitHub issue so we can expand the EMS device library."));
+            myDebug_P(PSTR("One or more devices are not recognized by EMS-ESP. Please report this in GitHub."));
         }
     } else {
         myDebug_P(PSTR("No were devices recognized. This may be because Tx is disabled or failing."));
@@ -2545,6 +2569,7 @@ void ems_setFlowTemp(uint8_t temperature) {
 /**
  * Set the warm water mode to comfort to Eco/Comfort
  * 1 = Hot, 2 = Eco, 3 = Intelligent
+ * to 0x33
  */
 void ems_setWarmWaterModeComfort(uint8_t comfort) {
     _EMS_TxTelegram EMS_TxTelegram = EMS_TX_TELEGRAM_NEW; // create new Tx

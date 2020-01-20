@@ -9,7 +9,7 @@
 #ifndef MyESP_h
 #define MyESP_h
 
-#define MYESP_VERSION "1.2.22"
+#define MYESP_VERSION "1.2.25"
 
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
@@ -345,7 +345,7 @@ class MyESP {
     // mqtt log
     _MQTT_Log_t MQTT_log[MYESP_MQTTLOG_MAX]; // log for publish and subscribe messages
 
-    void _printMQTTLog();
+    void _printMQTTLog(bool show_sub);
     void _addMQTTLog(const char * topic, const char * payload, const MYESP_MQTTLOGTYPE_t type);
 
     AsyncMqttClient mqttClient; // the MQTT class
@@ -366,6 +366,7 @@ class MyESP {
     uint32_t        _mqtt_last_connection;
     bool            _mqtt_connecting;
     bool            _mqtt_heartbeat;
+    uint16_t        _mqtt_publish_fails;
 
     // wifi
     void            _wifiCallback(justwifi_messages_t code, char * parameter);

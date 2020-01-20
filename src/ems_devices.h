@@ -54,7 +54,7 @@
 #define EMS_OFFSET_UBASetPoints_flowtemp 0 // flow temp
 
 // SM and HP Types
-// Assuming SM100 behaves like SM200
+// Assuming here that the SM200 behaves like SM100
 #define EMS_TYPE_SM10Monitor 0x97    // SM10Monitor
 #define EMS_TYPE_SM100Monitor 0x0262 // SM100Monitor
 #define EMS_TYPE_SM100Status 0x0264  // SM100Status
@@ -111,7 +111,6 @@
 #define EMS_OFFSET_RC35StatusMessage_curr 3     // current temp
 #define EMS_OFFSET_RC35StatusMessage_mode 1     // day mode, also summer on RC3's
 #define EMS_OFFSET_RC35StatusMessage_mode1 0    // for holiday mode
-
 
 #define EMS_TYPE_RC35Set_HC1 0x3D // for setting values like temp and mode (Working mode HC1)
 #define EMS_TYPE_RC35Set_HC2 0x47 // for setting values like temp and mode (Working mode HC2)
@@ -253,7 +252,7 @@ static const _EMS_Device EMS_Devices[] = {
     {171, EMS_DEVICE_TYPE_CONNECT, "EMS-OT OpenTherm converter", EMS_DEVICE_FLAG_NONE},                         // 0x02
     {189, EMS_DEVICE_TYPE_GATEWAY, "Web Gateway KM200", EMS_DEVICE_FLAG_NONE},                                  // 0x48
     {94, EMS_DEVICE_TYPE_GATEWAY, "RC Remote Device", EMS_DEVICE_FLAG_NONE},                                    // 0x18
-    {207, EMS_DEVICE_TYPE_CONTROLLER, "Worcester Sense II/Bosch CS100 Solar Controller", EMS_DEVICE_FLAG_NONE}, // 0x10
+    {207, EMS_DEVICE_TYPE_CONTROLLER, "Worcester Sense II/Bosch CS200 Solar Controller", EMS_DEVICE_FLAG_NONE}, // 0x10
 
     //
     // Thermostats, typically device id of 0x10, 0x17, 0x18, 0x38 (RC100), 0x39 (Easy)

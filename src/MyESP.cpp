@@ -78,6 +78,7 @@ MyESP::MyESP() {
     _mqtt_will_topic           = strdup(MQTT_WILL_TOPIC);
     _mqtt_will_online_payload  = strdup(MQTT_WILL_ONLINE_PAYLOAD);
     _mqtt_will_offline_payload = strdup(MQTT_WILL_OFFLINE_PAYLOAD);
+    _mqtt_publish_fails        = 0; // count of number of failed MQTT topic publishes
 
     // network
     _network_password  = nullptr;
@@ -425,9 +426,19 @@ bool MyESP::mqttPublish(const char * topic, const char * payload, bool retain) {
         if (packet_id) {
             _addMQTTLog(topic, payload, MYESP_MQTTLOGTYPE_PUBLISH); // add to the log
             return true;
-        } else {
-            myDebug_P(PSTR("[MQTT] Error publishing to %s with payload %s [error %d]"), _mqttTopic(topic), payload, packet_id);
         }
+
+        // it failed, try again https://github.com/proddy/EMS-ESP/issues/264
+        delay(100); // this is blocking and probably not a good idea
+        packet_id = mqttClient.publish(_mqttTopic(topic), _mqtt_qos, retain, payload);
+        if (packet_id) {
+            _addMQTTLog(topic, payload, MYESP_MQTTLOGTYPE_PUBLISH); // add to the log
+            return true;                                            // ok this time
+        }
+
+        // it didn't work again, will return false
+        myDebug_P(PSTR("[MQTT] Error publishing to %s with payload %s [error %d]"), _mqttTopic(topic), payload, packet_id);
+        _mqtt_publish_fails++; // increment failure counter
     }
 
     return false; // failed
@@ -452,7 +463,7 @@ void MyESP::_mqttOnConnect() {
     mqttPublish(MQTT_TOPIC_START, MQTT_TOPIC_START_PAYLOAD, false);
 
     // send heartbeat if enabled
-    _heartbeatCheck();
+    _heartbeatCheck(true);
 
     // call custom function to handle mqtt receives
     (_mqtt_callback_f)(MQTT_CONNECT_EVENT, nullptr, nullptr);
@@ -714,8 +725,8 @@ void MyESP::_consoleShowHelp() {
 
     myDebug_P(PSTR("*"));
     myDebug_P(PSTR("* Commands:"));
-    myDebug_P(PSTR("*  ?/help=show commands, CTRL-D/quit=close telnet session"));
-    myDebug_P(PSTR("*  set, system, restart, mqttlog, kick, save"));
+    myDebug_P(PSTR("*  ?/help=show commands, CTRL-D/quit=end telnet session"));
+    myDebug_P(PSTR("*  set, system, restart, mqttlog [all], kick, save"));
 
 #ifdef CRASH
     myDebug_P(PSTR("*  crash <dump | clear | test [n]>"));
@@ -1041,12 +1052,12 @@ void MyESP::_telnetCommand(char * commandLine) {
     }
 
     // print mqtt log command
-    if ((strcmp(ptrToCommandName, "mqttlog") == 0) && (wc == 1)) {
-        _printMQTTLog();
+    if (strcmp(ptrToCommandName, "mqttlog") == 0) {
+        _printMQTTLog(wc != 1);
         return;
     }
 
-    // show system stats
+    // show system status
     if ((strcmp(ptrToCommandName, "system") == 0) && (wc == 1)) {
         showSystemStats();
         return;
@@ -1059,7 +1070,7 @@ void MyESP::_telnetCommand(char * commandLine) {
         return;
     }
 
-    // show system stats
+    // quit
     if ((strcmp(ptrToCommandName, "quit") == 0) && (wc == 1)) {
         myDebug_P(PSTR("[TELNET] exiting telnet session"));
         SerialAndTelnet.disconnectClient();
@@ -1322,13 +1333,13 @@ void MyESP::_systemCheckLoop() {
     }
 }
 
-// print out ESP system stats
+// print out ESP system status
 // for battery power is ESP.getVcc()
 void MyESP::showSystemStats() {
 #if defined(ESP8266)
-    myDebug_P(PSTR("%sESP8266 System stats:%s"), COLOR_BOLD_ON, COLOR_BOLD_OFF);
+    myDebug_P(PSTR("%sESP8266 System status:%s"), COLOR_BOLD_ON, COLOR_BOLD_OFF);
 #else
-    myDebug_P(PSTR("ESP32 System stats:"));
+    myDebug_P(PSTR("ESP32 System status:"));
 #endif
     myDebug_P(PSTR(""));
 
@@ -1372,6 +1383,7 @@ void MyESP::showSystemStats() {
 
     if (isMQTTConnected()) {
         myDebug_P(PSTR(" [MQTT] is connected (heartbeat %s)"), getHeartbeat() ? "enabled" : "disabled");
+        myDebug_P(PSTR(" [MQTT] # failed topic publishes: %d"), _mqtt_publish_fails);
     } else {
         myDebug_P(PSTR(" [MQTT] is disconnected"));
     }
@@ -1455,16 +1467,16 @@ void MyESP::_heartbeatCheck(bool force) {
     if ((millis() - last_heartbeat > MYESP_HEARTBEAT_INTERVAL) || force) {
         last_heartbeat = millis();
 
-        // print to log if force is set, so at bootup
-        if (force) {
-            _printHeap("[SYSTEM]");
-        }
-
 #ifdef MYESP_DEBUG
         _printHeap("[HEARTBEAT] ");
 #endif
         if (!isMQTTConnected() || !(_mqtt_heartbeat)) {
             return;
+        }
+
+        // print to log if force is set
+        if (force) {
+            _printHeap("[SYSTEM]");
         }
 
         uint32_t total_memory  = _getInitialFreeHeap();
@@ -1474,13 +1486,13 @@ void MyESP::_heartbeatCheck(bool force) {
         StaticJsonDocument<MYESP_JSON_MAXSIZE_SMALL> doc;
         JsonObject                                   rootHeartbeat = doc.to<JsonObject>();
 
-        rootHeartbeat["version"]         = _app_version;
-        rootHeartbeat["IP"]              = WiFi.localIP().toString();
-        rootHeartbeat["rssid"]           = getWifiQuality();
-        rootHeartbeat["load"]            = getSystemLoadAverage();
-        rootHeartbeat["uptime"]          = _getUptime();
-        rootHeartbeat["freemem"]         = mem_available;
-        rootHeartbeat["MQTTdisconnects"] = _getSystemDropoutCounter();
+        //rootHeartbeat["version"]         = _app_version;
+        //rootHeartbeat["IP"]              = WiFi.localIP().toString();
+        rootHeartbeat["rssid"]   = getWifiQuality();
+        rootHeartbeat["load"]    = getSystemLoadAverage();
+        rootHeartbeat["uptime"]  = _getUptime();
+        rootHeartbeat["freemem"] = mem_available;
+        //rootHeartbeat["MQTTdisconnects"] = _getSystemDropoutCounter();
 
         char data[300] = {0};
         serializeJson(doc, data, sizeof(data));
@@ -2676,13 +2688,13 @@ void MyESP::_printHeap(const char * prefix) {
 }
 
 // print MQTT log - everything that was published last per topic
-void MyESP::_printMQTTLog() {
+void MyESP::_printMQTTLog(bool show_sub = false) {
     myDebug_P(PSTR("MQTT publish log:"));
     uint8_t i;
 
     for (i = 0; i < MYESP_MQTTLOG_MAX; i++) {
         if ((MQTT_log[i].topic != nullptr) && (MQTT_log[i].type == MYESP_MQTTLOGTYPE_PUBLISH)) {
-            myDebug_P(PSTR("  Timestamp:%02d:%02d:%02d Topic:%s Payload:%s"),
+            myDebug_P(PSTR("  (%02d:%02d:%02d) Topic:%s Payload:%s"),
                       to_hour(MQTT_log[i].timestamp),
                       to_minute(MQTT_log[i].timestamp),
                       to_second(MQTT_log[i].timestamp),
@@ -2691,12 +2703,15 @@ void MyESP::_printMQTTLog() {
         }
     }
 
-    myDebug_P(PSTR("")); // newline
-    myDebug_P(PSTR("MQTT subscriptions:"));
+    // show subscriptions
+    if (show_sub) {
+        myDebug_P(PSTR("")); // newline
+        myDebug_P(PSTR("MQTT subscriptions:"));
 
-    for (i = 0; i < MYESP_MQTTLOG_MAX; i++) {
-        if ((MQTT_log[i].topic != nullptr) && (MQTT_log[i].type == MYESP_MQTTLOGTYPE_SUBSCRIBE)) {
-            myDebug_P(PSTR("  Topic:%s"), MQTT_log[i].topic);
+        for (i = 0; i < MYESP_MQTTLOG_MAX; i++) {
+            if ((MQTT_log[i].topic != nullptr) && (MQTT_log[i].type == MYESP_MQTTLOGTYPE_SUBSCRIBE)) {
+                myDebug_P(PSTR("  Topic:%s"), MQTT_log[i].topic);
+            }
         }
     }
 
@@ -2870,7 +2885,6 @@ void MyESP::begin(const char * app_hostname, const char * app_name, const char *
     _webserver_setup();    // init web server
 
     _setSystemCheck(false); // reset system check
-    _heartbeatCheck(true);  // force heartbeat, will send out message to log too
 
     _setSystemDropoutCounter(0); // reset # TCP dropouts
 
