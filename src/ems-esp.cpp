@@ -196,7 +196,7 @@ _EMS_THERMOSTAT_MODE _getThermostatDayMode(uint8_t hc_num) {
         } else if (mode == 2) {
             thermoMode = EMS_THERMOSTAT_MODE_NIGHT;
         }
-    } else if (model == EMS_DEVICE_FLAG_RC35) {
+    } else if ((model == EMS_DEVICE_FLAG_RC35) || (model == EMS_DEVICE_FLAG_RC30N)) {
         if (mode == 0) {
             thermoMode = EMS_THERMOSTAT_MODE_NIGHT;
         } else if (mode == 1) {
@@ -215,7 +215,7 @@ _EMS_THERMOSTAT_MODE _getThermostatDayMode(uint8_t hc_num) {
 
 // Info - display status and data on an 'info' command
 void showInfo() {
-    static char buffer_type[128] = {0};
+    static char buffer_type[200] = {0};
 
     myDebug_P(PSTR("%sEMS-ESP system status:%s"), COLOR_BOLD_ON, COLOR_BOLD_OFF);
     _EMS_SYS_LOGGING sysLog = ems_getLogging();
@@ -435,7 +435,7 @@ void showInfo() {
 
                 // Render Day/Night/Holiday Temperature on RC35s
                 // there is no single setpoint temp, but one for day, night and vacation
-                if (model == EMS_DEVICE_FLAG_RC35) {
+                if ((model == EMS_DEVICE_FLAG_RC35) || (model == EMS_DEVICE_FLAG_RC30N)) {
                     if (EMS_Thermostat.hc[hc_num - 1].summer_mode) {
                         myDebug_P(PSTR("   Program is set to Summer mode"));
                     } else if (EMS_Thermostat.hc[hc_num - 1].holiday_mode) {
@@ -479,32 +479,33 @@ void showInfo() {
     if (ems_getMixingDeviceEnabled()) {
         myDebug_P(PSTR("")); // newline
         myDebug_P(PSTR("%sMixing module data:%s"), COLOR_BOLD_ON, COLOR_BOLD_OFF);
-        // myDebug_P(PSTR("  Mixing: %s"), ems_getDeviceDescription(EMS_DEVICE_TYPE_MIXING, buffer_type,false));
-        if (EMS_Boiler.switchTemp < EMS_VALUE_USHORT_NOTSET)
+        myDebug_P(PSTR("  Mixing Module: %s"), ems_getDeviceDescription(EMS_DEVICE_TYPE_MIXING, buffer_type, false));
+        if ((EMS_Boiler.switchTemp < EMS_VALUE_USHORT_NOTSET) && (EMS_Boiler.switchTemp != 0)) {
             _renderUShortValue("Switch temperature", "C", EMS_Boiler.switchTemp);
+        }
 
         for (uint8_t hc_num = 1; hc_num <= EMS_THERMOSTAT_MAXHC; hc_num++) {
-            if (EMS_Mixing.hc[hc_num - 1].active) {
+            if (EMS_MixingModule.hc[hc_num - 1].active) {
                 myDebug_P(PSTR("  Mixing Circuit %d"), hc_num);
-                if (EMS_Mixing.hc[hc_num - 1].flowTemp < EMS_VALUE_USHORT_NOTSET)
-                    _renderUShortValue(" Current flow temperature", "C", EMS_Mixing.hc[hc_num - 1].flowTemp);
-                if (EMS_Mixing.hc[hc_num - 1].flowSetTemp != EMS_VALUE_INT_NOTSET)
-                    _renderIntValue(" Setpoint flow temperature", "C", EMS_Mixing.hc[hc_num - 1].flowSetTemp);
-                if (EMS_Mixing.hc[hc_num - 1].pumpMod != EMS_VALUE_INT_NOTSET)
-                    _renderIntValue(" Current pump modulation", "%", EMS_Mixing.hc[hc_num - 1].pumpMod);
-                if (EMS_Mixing.hc[hc_num - 1].valveStatus != EMS_VALUE_INT_NOTSET)
-                    _renderIntValue(" Current valve status", "", EMS_Mixing.hc[hc_num - 1].valveStatus);
+                if (EMS_MixingModule.hc[hc_num - 1].flowTemp < EMS_VALUE_USHORT_NOTSET)
+                    _renderUShortValue(" Current flow temperature", "C", EMS_MixingModule.hc[hc_num - 1].flowTemp);
+                if (EMS_MixingModule.hc[hc_num - 1].flowSetTemp != EMS_VALUE_INT_NOTSET)
+                    _renderIntValue(" Setpoint flow temperature", "C", EMS_MixingModule.hc[hc_num - 1].flowSetTemp);
+                if (EMS_MixingModule.hc[hc_num - 1].pumpMod != EMS_VALUE_INT_NOTSET)
+                    _renderIntValue(" Current pump modulation", "%", EMS_MixingModule.hc[hc_num - 1].pumpMod);
+                if (EMS_MixingModule.hc[hc_num - 1].valveStatus != EMS_VALUE_INT_NOTSET)
+                    _renderIntValue(" Current valve status", "", EMS_MixingModule.hc[hc_num - 1].valveStatus);
             }
         }
         for (uint8_t wwc_num = 1; wwc_num <= EMS_THERMOSTAT_MAXWWC; wwc_num++) {
-            if (EMS_Mixing.wwc[wwc_num - 1].active) {
+            if (EMS_MixingModule.wwc[wwc_num - 1].active) {
                 myDebug_P(PSTR("  Warm Water Circuit %d"), wwc_num);
-                if (EMS_Mixing.wwc[wwc_num - 1].flowTemp < EMS_VALUE_USHORT_NOTSET)
-                    _renderUShortValue(" Current warm water temperature", "C", EMS_Mixing.wwc[wwc_num - 1].flowTemp);
-                if (EMS_Mixing.wwc[wwc_num - 1].pumpMod != EMS_VALUE_INT_NOTSET)
-                    _renderIntValue(" Current pump status", "", EMS_Mixing.wwc[wwc_num - 1].pumpMod);
-                if (EMS_Mixing.wwc[wwc_num - 1].tempStatus != EMS_VALUE_INT_NOTSET)
-                    _renderIntValue(" Current temp status", "", EMS_Mixing.wwc[wwc_num - 1].tempStatus);
+                if (EMS_MixingModule.wwc[wwc_num - 1].flowTemp < EMS_VALUE_USHORT_NOTSET)
+                    _renderUShortValue(" Current warm water temperature", "C", EMS_MixingModule.wwc[wwc_num - 1].flowTemp);
+                if (EMS_MixingModule.wwc[wwc_num - 1].pumpMod != EMS_VALUE_INT_NOTSET)
+                    _renderIntValue(" Current pump status", "", EMS_MixingModule.wwc[wwc_num - 1].pumpMod);
+                if (EMS_MixingModule.wwc[wwc_num - 1].tempStatus != EMS_VALUE_INT_NOTSET)
+                    _renderIntValue(" Current temp status", "", EMS_MixingModule.wwc[wwc_num - 1].tempStatus);
             }
         }
     }
@@ -779,7 +780,7 @@ void publishEMSValues(bool force) {
         JsonObject rootMixing = doc.to<JsonObject>();
 
         for (uint8_t hc_v = 1; hc_v <= EMS_THERMOSTAT_MAXHC; hc_v++) {
-            _EMS_Mixing_HC * mixing = &EMS_Mixing.hc[hc_v - 1];
+            _EMS_MixingModule_HC * mixing = &EMS_MixingModule.hc[hc_v - 1];
 
             // only send if we have an active Heating Circuit with real data
             if (mixing->active) {
@@ -799,7 +800,7 @@ void publishEMSValues(bool force) {
             }
         }
         for (uint8_t wwc_v = 1; wwc_v <= EMS_THERMOSTAT_MAXWWC; wwc_v++) {
-            _EMS_Mixing_WWC * mixing = &EMS_Mixing.wwc[wwc_v - 1];
+            _EMS_MixingModule_WWC * mixing = &EMS_MixingModule.wwc[wwc_v - 1];
             // only send if we have an active Warm water Circuit with real data
             if (mixing->active) {
                 // build new json object
@@ -1278,7 +1279,8 @@ void TelnetCommandCallback(uint8_t wc, const char * commandLine) {
         if (wc == 2) {
             char * second_cmd = _readWord();
             if (strcmp(second_cmd, "scan") == 0) {
-                ems_scanDevices(); // known device scan
+                ems_clearDeviceList();
+                ems_scanDevices();
                 ok = true;
             }
         } else {
