@@ -765,7 +765,7 @@ U 1 1 5DF4769F
 P 7100 4550
 F 0 "J3" H 7128 4526 50  0000 L CNN
 F 1 "I2C" H 7128 4435 50  0000 L CNN
-F 2 "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Horizontal" H 7100 4550 50  0001 C CNN
+F 2 "Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical" H 7100 4550 50  0001 C CNN
 F 3 "~" H 7100 4550 50  0001 C CNN
 	1    7100 4550
 	-1   0    0    1   
