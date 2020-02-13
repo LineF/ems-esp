@@ -52,16 +52,8 @@ uint8_t DS18::scan() {
     return count;
 }
 
-
-// scan every 2 seconds
 void DS18::loop() {
-    static uint32_t last = 0;
-    if (millis() - last < DS18_READ_INTERVAL) {
-        return;
-    }
-    last = millis();
-
-    // Every second we either start a conversion or read the scratchpad
+    // we either start a conversion or read the scratchpad
     static bool conversion = true;
     if (conversion) {
         _wire->reset();
@@ -97,7 +89,7 @@ void DS18::loop() {
 }
 
 // return string of the device, with name and address
-char * DS18::getDeviceString(char * buffer, unsigned char index) {
+char * DS18::getDeviceType(char * buffer, unsigned char index) {
     uint8_t size = 128;
     if (index < _count) {
         unsigned char chip_id = chip(index);
@@ -112,25 +104,22 @@ char * DS18::getDeviceString(char * buffer, unsigned char index) {
         } else {
             strlcpy(buffer, "Unknown", size);
         }
+    } else {
+        strlcpy(buffer, "invalid", size);
+    }
 
-        /*
+    return buffer;
+}
+
+// return string of the device, with name and address
+char * DS18::getDeviceID(char * buffer, unsigned char index) {
+    uint8_t size = 128;
+    if (index < _count) {
         uint8_t * address = _devices[index].address;
-        char a[30] = {0};
-        snprintf(a,
-                 sizeof(a),
-                 " (%02X%02X%02X%02X%02X%02X%02X%02X) @ GPIO%d",
-                 address[0],
-                 address[1],
-                 address[2],
-                 address[3],
-                 address[4],
-                 address[5],
-                 address[6],
-                 address[7],
-                 _gpio);
+        char      a[30]   = {0};
+        snprintf(a, sizeof(a), "%02X%02X%02X%02X%02X%02X%02X%02X", address[0], address[1], address[2], address[3], address[4], address[5], address[6], address[7]);
 
-        strlcat(buffer, a, size);
-        */
+        strlcpy(buffer, a, size);
     } else {
         strlcpy(buffer, "invalid", size);
     }
