@@ -99,7 +99,7 @@ function listCustomStats() {
         var l = document.createElement("li");
         var type = obj[i].type;
         var color = "";
-        if (type === "UBAMaster") {
+        if (type === "Boiler") {
             color = "list-group-item-success";
         } else if (type === "Thermostat") {
             color = "list-group-item-info";
@@ -108,7 +108,7 @@ function listCustomStats() {
         } else if (type === "Heat Pump") {
             color = "list-group-item-success";
         }
-        l.innerHTML = obj[i].model + " (Version:" + obj[i].version + " ProductID:" + obj[i].productid + " DeviceID:0x" + obj[i].deviceid + ")";
+        l.innerHTML = obj[i].model + " (DeviceID: 0x" + obj[i].deviceid + ", ProductID: " + obj[i].productid + ", Version: " + obj[i].version + ")";
         l.className = "list-group-item " + color;
         list.appendChild(l);
     }

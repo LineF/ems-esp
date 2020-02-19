@@ -12,6 +12,9 @@
 #include <Arduino.h>
 #include <list> // std::list
 
+// EMS bus IDs
+#define EMS_BUSID_DEFAULT 0x0B // Default 0x0B (Service Key)
+
 // EMS tx_mode types
 #define EMS_TXMODE_DEFAULT 1 // Default (was previously known as tx_mode 2 in v1.8.x)
 #define EMS_TXMODE_EMSPLUS 2 // EMS+
@@ -43,11 +46,13 @@
 #define EMS_MIXING_MAXWWC 2 // max number of warm water circuits
 
 // Device Flags
-#define EMS_DEVICE_FLAG_NONE 0   // no flags set
-#define EMS_DEVICE_FLAG_SM10 10  // solar module1
-#define EMS_DEVICE_FLAG_SM100 11 // solar module2
+#define EMS_DEVICE_FLAG_NONE 0    // no flags set
+#define EMS_DEVICE_FLAG_SM10 10   // solar module1
+#define EMS_DEVICE_FLAG_SM100 11  // solar module2
+#define EMS_DEVICE_FLAG_MMPLUS 12 // mixing module EMS+
+#define EMS_DEVICE_FLAG_MM10 13   // mixing modules MM10 and MM50
 
-// group flags specific for thermostats
+// device flags specific for thermostats
 #define EMS_DEVICE_FLAG_NO_WRITE 0x80 // top bit set if write not supported
 #define EMS_DEVICE_FLAG_EASY 1
 #define EMS_DEVICE_FLAG_RC10 2
@@ -129,24 +134,24 @@ typedef enum {
 typedef struct {
     _EMS_RX_STATUS   emsRxStatus;
     _EMS_TX_STATUS   emsTxStatus;
-    uint16_t         emsRxPgks;                              // # successfull received
-    uint16_t         emsTxPkgs;                              // # successfull sent
-    uint16_t         emxCrcErr;                              // CRC errors
-    bool             emsPollEnabled;                         // flag enable the response to poll messages
-    _EMS_SYS_LOGGING emsLogging;                             // logging
-    uint16_t         emsLogging_ID;                          // the type or device ID to watch
-    uint8_t          emsRefreshedFlags;                      // fresh data, needs to be pushed out to MQTT
-    bool             emsBusConnected;                        // is there an active bus
-    uint32_t         emsRxTimestamp;                         // timestamp of last EMS message received
-    uint32_t         emsPollFrequency;                       // time between EMS polls
-    bool             emsTxCapable;                           // able to send via Tx
-    bool             emsTxDisabled;                          // true to prevent all Tx
-    uint8_t          txRetryCount;                           // # times the last Tx was re-sent
-    uint8_t          emsIDMask;                              // Buderus: 0x00, Junkers: 0x80
-    uint8_t          emsPollAck[1];                          // acknowledge buffer for Poll
-    uint8_t          emsTxMode;                              // Tx mode 1, 2 or 3
-    uint8_t          emsMasterThermostat;                    // product ID for the default thermostat to use
-    char             emsDeviceMap[EMS_SYS_DEVICEMAP_LENGTH]; // contents of 0x07 telegram with bitmasks for all active EMS devices
+    uint16_t         emsRxPgks;           // # successfull received
+    uint16_t         emsTxPkgs;           // # successfull sent
+    uint16_t         emxCrcErr;           // CRC errors
+    bool             emsPollEnabled;      // flag enable the response to poll messages
+    _EMS_SYS_LOGGING emsLogging;          // logging
+    uint16_t         emsLogging_ID;       // the type or device ID to watch
+    uint8_t          emsRefreshedFlags;   // fresh data, needs to be pushed out to MQTT
+    bool             emsBusConnected;     // is there an active bus
+    uint32_t         emsRxTimestamp;      // timestamp of last EMS message received
+    uint32_t         emsPollFrequency;    // time between EMS polls
+    bool             emsTxCapable;        // able to send via Tx
+    bool             emsTxDisabled;       // true to prevent all Tx
+    uint8_t          txRetryCount;        // # times the last Tx was re-sent
+    uint8_t          emsIDMask;           // Buderus: 0x00, Junkers: 0x80
+    uint8_t          emsPollAck[1];       // acknowledge buffer for Poll
+    uint8_t          emsTxMode;           // Tx mode 1, 2 or 3
+    uint8_t          emsbusid;            // EMS bus ID, default 0x0B for Service Key
+    uint8_t          emsMasterThermostat; // product ID for the default thermostat to use
 } _EMS_Sys_Status;
 
 // The Tx send package
@@ -233,7 +238,7 @@ const _EMS_Device_Types EMS_Devices_Types[] = {
     {EMS_DEVICE_TYPE_UNKNOWN, EMS_MODELTYPE_UNKNOWN_STRING}, // the first, at index 0 is reserved for "unknown"
     {EMS_DEVICE_TYPE_NONE, "All"},
     {EMS_DEVICE_TYPE_SERVICEKEY, "Me"},
-    {EMS_DEVICE_TYPE_BOILER, "UBAMaster"},
+    {EMS_DEVICE_TYPE_BOILER, "Boiler"},
     {EMS_DEVICE_TYPE_THERMOSTAT, "Thermostat"},
     {EMS_DEVICE_TYPE_MIXING, "Mixing Module"},
     {EMS_DEVICE_TYPE_SOLAR, "Solar Module"},
@@ -241,7 +246,7 @@ const _EMS_Device_Types EMS_Devices_Types[] = {
     {EMS_DEVICE_TYPE_GATEWAY, "Gateway"},
     {EMS_DEVICE_TYPE_SWITCH, "Switching Module"},
     {EMS_DEVICE_TYPE_CONTROLLER, "Controller"},
-    {EMS_DEVICE_TYPE_CONNECT, "Connect"}
+    {EMS_DEVICE_TYPE_CONNECT, "Connect Module"}
 
 };
 
@@ -433,47 +438,52 @@ typedef struct {
 } _EMS_Type;
 
 // function definitions
-void             ems_dumpBuffer(const char * prefix, uint8_t * telegram, uint8_t length);
-void             ems_parseTelegram(uint8_t * telegram, uint8_t len);
-void             ems_init();
-void             ems_doReadCommand(uint16_t type, uint8_t dest);
-void             ems_sendRawTelegram(char * telegram);
-void             ems_printDevices();
-uint8_t          ems_printDevices_s(char * buffer, uint16_t len);
-void             ems_printTxQueue();
-void             ems_testTelegram(uint8_t test_num);
-void             ems_startupTelegrams();
-bool             ems_checkEMSBUSAlive();
-void             ems_clearDeviceList();
-void             ems_setThermostatTemp(float temperature, uint8_t hc, uint8_t temptype = 0);
-void             ems_setThermostatMode(uint8_t mode, uint8_t hc);
-void             ems_setWarmWaterTemp(uint8_t temperature);
-void             ems_setFlowTemp(uint8_t temperature);
-void             ems_setWarmWaterActivated(bool activated);
-void             ems_setWarmWaterOnetime(bool activated);
-void             ems_setWarmWaterCirculation(bool activated);
-void             ems_setWarmTapWaterActivated(bool activated);
-void             ems_setPoll(bool b);
-void             ems_setLogging(_EMS_SYS_LOGGING loglevel, uint16_t type_id);
-void             ems_setLogging(_EMS_SYS_LOGGING loglevel, bool quiet = false);
-void             ems_setWarmWaterModeComfort(uint8_t comfort);
-void             ems_setModels();
-void             ems_setTxDisabled(bool b);
-void             ems_setTxMode(uint8_t mode);
-void             ems_setMasterThermostat(uint8_t product_id);
-char *           ems_getDeviceDescription(_EMS_DEVICE_TYPE device_type, char * buffer, bool name_only = false);
-bool             ems_getDeviceTypeDescription(uint8_t device_id, char * buffer);
-char *           ems_getDeviceTypeName(_EMS_DEVICE_TYPE device_type, char * buffer);
-void             ems_getThermostatValues();
-void             ems_getBoilerValues();
-void             ems_getSolarModuleValues();
-bool             ems_getPoll();
-bool             ems_getTxEnabled();
-bool             ems_getThermostatEnabled();
-bool             ems_getMixingDeviceEnabled();
-bool             ems_getBoilerEnabled();
-bool             ems_getSolarModuleEnabled();
-bool             ems_getHeatPumpEnabled();
+void    ems_dumpBuffer(const char * prefix, uint8_t * telegram, uint8_t length);
+void    ems_parseTelegram(uint8_t * telegram, uint8_t len);
+void    ems_init();
+void    ems_doReadCommand(uint16_t type, uint8_t dest);
+void    ems_sendRawTelegram(char * telegram);
+void    ems_printDevices();
+uint8_t ems_printDevices_s(char * buffer, uint16_t len);
+void    ems_printTxQueue();
+void    ems_testTelegram(uint8_t test_num);
+void    ems_startupTelegrams();
+bool    ems_checkEMSBUSAlive();
+void    ems_setThermostatTemp(float temperature, uint8_t hc, uint8_t temptype = 0);
+void    ems_setThermostatMode(uint8_t mode, uint8_t hc);
+void    ems_setWarmWaterTemp(uint8_t temperature);
+void    ems_setFlowTemp(uint8_t temperature);
+void    ems_setWarmWaterActivated(bool activated);
+void    ems_setWarmWaterOnetime(bool activated);
+void    ems_setWarmWaterCirculation(bool activated);
+void    ems_setWarmTapWaterActivated(bool activated);
+void    ems_setPoll(bool b);
+void    ems_setLogging(_EMS_SYS_LOGGING loglevel, uint16_t type_id);
+void    ems_setLogging(_EMS_SYS_LOGGING loglevel, bool quiet = false);
+void    ems_setWarmWaterModeComfort(uint8_t comfort);
+void    ems_setModels();
+void    ems_setTxDisabled(bool b);
+void    ems_setTxMode(uint8_t mode);
+void    ems_setEMSbusid(uint8_t id);
+void    ems_setMasterThermostat(uint8_t product_id);
+char *  ems_getDeviceDescription(_EMS_DEVICE_TYPE device_type, char * buffer, bool name_only = false);
+bool    ems_getDeviceTypeDescription(uint8_t device_id, char * buffer);
+char *  ems_getDeviceTypeName(_EMS_DEVICE_TYPE device_type, char * buffer);
+
+void ems_getThermostatValues();
+void ems_getBoilerValues();
+void ems_getSolarModuleValues();
+void ems_getMixingModuleValues();
+
+bool ems_getPoll();
+bool ems_getTxEnabled();
+
+bool ems_getThermostatEnabled();
+bool ems_getMixingModuleEnabled();
+bool ems_getBoilerEnabled();
+bool ems_getSolarModuleEnabled();
+bool ems_getHeatPumpEnabled();
+
 bool             ems_getBusConnected();
 _EMS_SYS_LOGGING ems_getLogging();
 uint8_t          ems_getThermostatModel();

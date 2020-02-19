@@ -410,36 +410,29 @@ void MyESP::mqttUnsubscribe(const char * topic) {
 
 // Publish using the user's custom retain flag
 bool MyESP::mqttPublish(const char * topic, const char * payload) {
-    // use the custom MQTT retain flag
     return mqttPublish(topic, payload, _mqtt_retain);
 }
 
 // MQTT Publish
 // returns true if all good
 bool MyESP::mqttPublish(const char * topic, const char * payload, bool retain) {
-    if (mqttClient.connected() && (strlen(topic) > 0)) {
-#ifdef MYESP_DEBUG
-        myDebug_P(PSTR("[MQTT] Sending publish to %s with payload %s"), _mqttTopic(topic), payload);
-#endif
-        uint16_t packet_id = mqttClient.publish(_mqttTopic(topic), _mqtt_qos, retain, payload);
-
-        if (packet_id) {
-            _addMQTTLog(topic, payload, MYESP_MQTTLOGTYPE_PUBLISH); // add to the log
-            return true;
-        }
-
-        // it failed, try again https://github.com/proddy/EMS-ESP/issues/264
-        delay(100); // this is blocking and probably not a good idea
-        packet_id = mqttClient.publish(_mqttTopic(topic), _mqtt_qos, retain, payload);
-        if (packet_id) {
-            _addMQTTLog(topic, payload, MYESP_MQTTLOGTYPE_PUBLISH); // add to the log
-            return true;                                            // ok this time
-        }
-
-        // it didn't work again, will return false
-        myDebug_P(PSTR("[MQTT] Error publishing to %s with payload %s [error %d]"), _mqttTopic(topic), payload, packet_id);
-        _mqtt_publish_fails++; // increment failure counter
+    if (!mqttClient.connected() || !_hasValue(topic) || !_hasValue(payload)) {
+        return false;
     }
+
+#ifdef MYESP_DEBUG
+    myDebug_P(PSTR("[MQTT] Sending publish to %s with payload %s"), _mqttTopic(topic), payload);
+#endif
+    uint16_t packet_id = mqttClient.publish(_mqttTopic(topic), _mqtt_qos, retain, payload);
+
+    if (packet_id) {
+        _addMQTTLog(topic, payload, MYESP_MQTTLOGTYPE_PUBLISH); // add to the log
+        return true;
+    }
+
+    // it failed, we should try again https://github.com/proddy/EMS-ESP/issues/264
+    myDebug_P(PSTR("[MQTT] Error publishing to %s with payload %s [error %d]"), _mqttTopic(topic), payload, packet_id);
+    _mqtt_publish_fails++; // increment failure counter
 
     return false; // failed
 }
@@ -1065,8 +1058,7 @@ void MyESP::_telnetCommand(char * commandLine) {
 
     // save everything
     if ((strcmp(ptrToCommandName, "save") == 0) && (wc == 1)) {
-        _fs_writeConfig();
-        _fs_createCustomConfig();
+        saveSettings();
         return;
     }
 
@@ -1096,6 +1088,12 @@ void MyESP::_telnetCommand(char * commandLine) {
     if (_telnetcommand_callback_f) {
         (_telnetcommand_callback_f)(wc, commandLine);
     }
+}
+
+// public function so clients can save config
+void MyESP::saveSettings() {
+    _fs_writeConfig();
+    _fs_createCustomConfig();
 }
 
 // returns WiFi hostname as a String object
@@ -1488,11 +1486,12 @@ void MyESP::_heartbeatCheck(bool force) {
 
         //rootHeartbeat["version"]         = _app_version;
         //rootHeartbeat["IP"]              = WiFi.localIP().toString();
-        rootHeartbeat["rssid"]   = getWifiQuality();
-        rootHeartbeat["load"]    = getSystemLoadAverage();
-        rootHeartbeat["uptime"]  = _getUptime();
-        rootHeartbeat["freemem"] = mem_available;
-        //rootHeartbeat["MQTTdisconnects"] = _getSystemDropoutCounter();
+        rootHeartbeat["rssid"]            = getWifiQuality();
+        rootHeartbeat["load"]             = getSystemLoadAverage();
+        rootHeartbeat["uptime"]           = _getUptime();
+        rootHeartbeat["freemem"]          = mem_available;
+        rootHeartbeat["tcpdrops"]         = _getSystemDropoutCounter();
+        rootHeartbeat["mqttpublishfails"] = _mqtt_publish_fails;
 
         char data[300] = {0};
         serializeJson(doc, data, sizeof(data));
@@ -2694,7 +2693,7 @@ void MyESP::_printMQTTLog(bool show_sub = false) {
 
     for (i = 0; i < MYESP_MQTTLOG_MAX; i++) {
         if ((MQTT_log[i].topic != nullptr) && (MQTT_log[i].type == MYESP_MQTTLOGTYPE_PUBLISH)) {
-            myDebug_P(PSTR("  (%02d:%02d:%02d) Topic:%s Payload:%s"),
+            myDebug_P(PSTR("  (%02d:%02d:%02d) Topic: %s Payload: %s"),
                       to_hour(MQTT_log[i].timestamp),
                       to_minute(MQTT_log[i].timestamp),
                       to_second(MQTT_log[i].timestamp),
@@ -2710,7 +2709,7 @@ void MyESP::_printMQTTLog(bool show_sub = false) {
 
         for (i = 0; i < MYESP_MQTTLOG_MAX; i++) {
             if ((MQTT_log[i].topic != nullptr) && (MQTT_log[i].type == MYESP_MQTTLOGTYPE_SUBSCRIBE)) {
-                myDebug_P(PSTR("  Topic:%s"), MQTT_log[i].topic);
+                myDebug_P(PSTR("  Topic: %s"), MQTT_log[i].topic);
             }
         }
     }

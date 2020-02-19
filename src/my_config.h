@@ -10,8 +10,9 @@
 
 #include "ems.h"
 
-// TOPICS with _CMD_ are used for receiving commands from an MQTT Broker
+// TOPICS with *_CMD_* are used for receiving commands from an MQTT Broker
 // EMS-ESP will subscribe to these topics
+
 #define TOPIC_GENERIC_CMD "generic_cmd" // for receiving generic system commands via MQTT
 
 // MQTT for thermostat
@@ -81,4 +82,7 @@
 #define TOPIC_SHOWER_DURATION "duration" // duration of the last shower
 
 // MQTT for External Sensors
-#define TOPIC_EXTERNAL_SENSORS "sensors"   // for sending sensor values to MQTT
+#define TOPIC_EXTERNAL_SENSORS "sensors"     // topic for sending sensor values to MQTT
+#define PAYLOAD_EXTERNAL_SENSOR_NUM "sensor" // which sensor #
+#define PAYLOAD_EXTERNAL_SENSOR_ID "id"
+#define PAYLOAD_EXTERNAL_SENSOR_TEMP "temp"
