@@ -19,7 +19,7 @@
 // Dallas external temp sensors
 #include "ds18.h"
 DS18 ds18;
-#define DS18_MQTT_PAYLOAD_MAXSIZE 600
+#define DS18_MQTT_PAYLOAD_MAXSIZE 700
 
 // public libraries
 #include <ArduinoJson.h> // https://github.com/bblanchon/ArduinoJson
