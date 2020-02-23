@@ -23,6 +23,15 @@ union system_rtcmem_t {
     uint32_t value;
 };
 
+struct mqtt_message_t {
+    uint16_t packetId    = 0;
+    char *   topic       = nullptr;
+    char *   payload     = nullptr;
+    bool     retain      = false;
+    uint8_t  retry_count = 0;
+};
+std::deque<mqtt_message_t> _mqtt_queue;
+
 // nasty global variables that are called from internal ws functions
 static char * _general_password = nullptr;
 static bool   _shouldRestart    = false;
@@ -74,6 +83,7 @@ MyESP::MyESP() {
     _mqtt_heartbeat            = false;
     _mqtt_keepalive            = MQTT_KEEPALIVE;
     _mqtt_qos                  = MQTT_QOS;
+    _mqtt_nestedjson           = false;
     _mqtt_retain               = MQTT_RETAIN;
     _mqtt_will_topic           = strdup(MQTT_WILL_TOPIC);
     _mqtt_will_online_payload  = strdup(MQTT_WILL_ONLINE_PAYLOAD);
@@ -111,14 +121,6 @@ MyESP::MyESP() {
 
     // get the build time
     _buildTime = _getBuildTime();
-
-    // MQTT log
-    for (uint8_t i = 0; i < MYESP_MQTTLOG_MAX; i++) {
-        MQTT_log[i].type      = 0;
-        MQTT_log[i].timestamp = 0;
-        MQTT_log[i].topic     = nullptr;
-        MQTT_log[i].payload   = nullptr;
-    }
 }
 
 MyESP::~MyESP() {
@@ -383,21 +385,17 @@ bool MyESP::mqttSubscribe(const char * topic) {
     if (mqttClient.connected() && (strlen(topic) > 0)) {
         char * topic_s = _mqttTopic(topic);
 
-        uint16_t packet_id = mqttClient.subscribe(topic_s, _mqtt_qos);
 #ifdef MYESP_DEBUG
         myDebug_P(PSTR("[MQTT] Subscribing to %s"), topic_s);
 #endif
-
-        if (packet_id) {
-            // add to mqtt log
-            _addMQTTLog(topic_s, "", MYESP_MQTTLOGTYPE_SUBSCRIBE); // Has an empty payload for now
-            return true;
-        } else {
+        uint16_t packet_id = mqttClient.subscribe(topic_s, _mqtt_qos);
+        if (!packet_id) {
             myDebug_P(PSTR("[MQTT] Error subscribing to %s, error %d"), _mqttTopic(topic), packet_id);
+            return false;
         }
     }
 
-    return false; // didn't work
+    return true;
 }
 
 // MQTT unsubscribe
@@ -408,33 +406,180 @@ void MyESP::mqttUnsubscribe(const char * topic) {
     }
 }
 
+// print MQTT log
+void MyESP::_printMQTTLog() {
+    myDebug_P(PSTR("MQTT publish queue:"));
+
+    if (_mqtt_queue.empty()) {
+        myDebug_P(PSTR("  queue is empty!"));
+        myDebug_P(PSTR("")); // newline
+        return;
+    }
+
+    for (mqtt_message_t it : _mqtt_queue) {
+        if (it.retry_count == 0) {
+            if (it.packetId == 0) {
+                myDebug_P(PSTR("  topic=%s payload=%s"), it.topic, it.payload);
+            } else {
+                myDebug_P(PSTR("  topic=%s payload=%s (pid %d)"), it.topic, it.payload, it.packetId);
+            }
+        } else {
+            myDebug_P(PSTR("  topic=%s payload=%s (pid %d, retry #%d)"), it.topic, it.payload, it.packetId, it.retry_count);
+        }
+    }
+
+    myDebug_P(PSTR("")); // newline
+}
+
 // Publish using the user's custom retain flag
-bool MyESP::mqttPublish(const char * topic, const char * payload) {
-    return mqttPublish(topic, payload, _mqtt_retain);
+void MyESP::mqttPublish(const char * topic, const char * payload) {
+    _mqttQueue(topic, payload, _mqtt_retain);
+}
+void MyESP::mqttPublish(const char * topic, JsonDocument payload) {
+    _mqttQueue(topic, payload, _mqtt_retain);
 }
 
 // MQTT Publish
-// returns true if all good
-bool MyESP::mqttPublish(const char * topic, const char * payload, bool retain) {
-    if (!mqttClient.connected() || !_hasValue(topic) || !_hasValue(payload)) {
+void MyESP::mqttPublish(const char * topic, const char * payload, bool retain) {
+    _mqttQueue(topic, payload, retain);
+}
+void MyESP::mqttPublish(const char * topic, JsonDocument payload, bool retain) {
+    _mqttQueue(topic, payload, retain);
+}
+
+// put a payload string into the queue
+bool MyESP::_mqttQueue(const char * topic, const char * payload, bool retain) {
+    if (!mqttClient.connected() || _mqtt_queue.size() >= MQTT_QUEUE_MAX_SIZE || !_hasValue(topic)) {
         return false;
     }
 
+    // create a new message
+    mqtt_message_t element;
+    element.topic       = strdup(topic);
+    element.retain      = retain;
+    element.packetId    = 0;
+    element.retry_count = 0;
+    if (payload != NULL) {
+        element.payload = strdup(payload);
+    }
 #ifdef MYESP_DEBUG
-    myDebug_P(PSTR("[MQTT] Sending publish to %s with payload %s"), _mqttTopic(topic), payload);
+    myDebug_P(PSTR("[MQTT] Adding to queue: #%d [%s] %s"), _mqtt_queue.size(), element.topic, element.payload);
 #endif
-    uint16_t packet_id = mqttClient.publish(_mqttTopic(topic), _mqtt_qos, retain, payload);
+    _mqtt_queue.push_back(element);
 
-    if (packet_id) {
-        _addMQTTLog(topic, payload, MYESP_MQTTLOGTYPE_PUBLISH); // add to the log
-        return true;
+    return true;
+}
+
+// convert json doc to a string buffer and place on queue
+bool MyESP::_mqttQueue(const char * topic, JsonDocument payload, bool retain) {
+    if (!mqttClient.connected() || _mqtt_queue.size() >= MQTT_QUEUE_MAX_SIZE || !_hasValue(topic)) {
+        return false;
     }
 
-    // it failed, we should try again https://github.com/proddy/EMS-ESP/issues/264
-    myDebug_P(PSTR("[MQTT] Error publishing to %s with payload %s [error %d]"), _mqttTopic(topic), payload, packet_id);
-    _mqtt_publish_fails++; // increment failure counter
+    // create a new message
+    mqtt_message_t element;
+    element.topic       = strdup(topic);
+    element.retain      = retain;
+    element.packetId    = 0;
+    element.retry_count = 0;
 
-    return false; // failed
+    // reserve space for buffer and serialize json into it
+    const size_t capacity = measureJson(payload) + 1;
+    if (capacity) {
+        element.payload = (char *)malloc(capacity);
+        serializeJson(payload, (char *)element.payload, capacity);
+    }
+
+#ifdef MYESP_DEBUG
+    myDebug_P(PSTR("[MQTT] Adding to queue: #%d [%s] %s"), _mqtt_queue.size(), element.topic, element.payload);
+#endif
+    _mqtt_queue.push_back(element);
+
+    return true;
+}
+
+// called when an MQTT Publish ACK is received
+// check if ACK matches the last Publish we sent, if not report an error
+// and always remove from queue
+void MyESP::_mqttOnPublish(uint16_t packetId) {
+#ifdef MYESP_DEBUG
+    myDebug_P(PSTR("[MQTT] Publish ACK for PID %d"), packetId);
+#endif
+
+    // find the MQTT message in the queue and remove it
+    if ((_mqtt_queue.empty()) || (_mqtt_qos == 0)) {
+        return;
+    }
+
+    mqtt_message_t element = _mqtt_queue.front(); // get top of list
+
+    // if the last published failed, don't bother checking it. wait for the re-try
+    if (element.packetId == 0) {
+        return;
+    }
+
+    if (element.packetId == packetId) {
+#ifdef MYESP_DEBUG
+        myDebug_P(PSTR("[MQTT] Found PID %d. Removing from queue."), packetId);
+#endif
+    } else {
+#ifdef MYESP_DEBUG
+        myDebug_P(PSTR("[MQTT] Mismatch, expecting PID %d, got %d."), element.packetId, packetId);
+        _mqtt_publish_fails++; // increment error count
+#endif
+    }
+
+    _mqttRemoveLastPublish(); // always remove
+}
+
+// removes top of queue
+void MyESP::_mqttRemoveLastPublish() {
+    mqtt_message_t element = _mqtt_queue.front(); // get top of list
+    free(element.topic);
+    if (element.payload) {
+        free(element.payload);
+    }
+    _mqtt_queue.pop_front();
+}
+
+// take top from queue and try and publish it
+void MyESP::_mqttPublishQueue() {
+    if ((!mqttClient.connected()) || (_mqtt_queue.empty())) {
+        return;
+    }
+
+    mqtt_message_t element = _mqtt_queue.front(); // fetch from queue
+
+    // try and publish it
+    uint16_t packet_id = mqttClient.publish(_mqttTopic(element.topic), _mqtt_qos, element.retain, element.payload);
+#ifdef MYESP_DEBUG
+    myDebug_P(PSTR("[MQTT] Sent publish (attempt #%d, pid %d) [%s] [%s]"), element.retry_count, packet_id, _mqttTopic(element.topic), element.payload);
+#endif
+
+    if (packet_id == 0) {
+        // it failed. if we retried n times, give up. remove from queue
+        if (element.retry_count == (MQTT_PUBLISH_MAX_RETRY - 1)) {
+            myDebug_P(PSTR("[MQTT] Failed to publish to %s with payload %s"), _mqttTopic(element.topic), element.payload);
+            _mqtt_publish_fails++; // increment failure counter
+            _mqttRemoveLastPublish();
+        } else {
+            _mqtt_queue[0].retry_count++;
+        }
+        return;
+    }
+
+    // if we have ACK set with QOS 1 or 2, leave on queue and let the ACK process remove it
+    // but add the packet_id so we can check it later
+    if (_mqtt_qos != 0) {
+        _mqtt_queue[0].packetId = packet_id;
+#ifdef MYESP_DEBUG
+        myDebug_P(PSTR("[MQTT] Setting packetID %d"), packet_id);
+#endif
+        return;
+    }
+
+    // delete it from queue
+    _mqttRemoveLastPublish();
 }
 
 // MQTT onConnect - when a connect is established
@@ -456,7 +601,7 @@ void MyESP::_mqttOnConnect() {
     mqttPublish(MQTT_TOPIC_START, MQTT_TOPIC_START_PAYLOAD, false);
 
     // send heartbeat if enabled
-    _heartbeatCheck(true);
+    heartbeatCheck(true);
 
     // call custom function to handle mqtt receives
     (_mqtt_callback_f)(MQTT_CONNECT_EVENT, nullptr, nullptr);
@@ -493,7 +638,8 @@ void MyESP::_mqtt_setup() {
     });
 
     //mqttClient.onSubscribe([this](uint16_t packetId, uint8_t qos) { myDebug_P(PSTR("[MQTT] Subscribe ACK for PID %d"), packetId); });
-    //mqttClient.onPublish([this](uint16_t packetId) { myDebug_P(PSTR("[MQTT] Publish ACK for PID %d"), packetId); });
+
+    mqttClient.onPublish([this](uint16_t packetId) { _mqttOnPublish(packetId); });
 
     mqttClient.onMessage([this](char * topic, char * payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
         _mqttOnMessage(topic, payload, len);
@@ -719,7 +865,7 @@ void MyESP::_consoleShowHelp() {
     myDebug_P(PSTR("*"));
     myDebug_P(PSTR("* Commands:"));
     myDebug_P(PSTR("*  ?/help=show commands, CTRL-D/quit=end telnet session"));
-    myDebug_P(PSTR("*  set, system, restart, mqttlog [all], kick, save"));
+    myDebug_P(PSTR("*  set, system, restart, mqttlog, kick, save"));
 
 #ifdef CRASH
     myDebug_P(PSTR("*  crash <dump | clear | test [n]>"));
@@ -762,6 +908,7 @@ void MyESP::_printSetCommands() {
     myDebug_P(PSTR("  set mqtt_qos [0-3]"));
     myDebug_P(PSTR("  set mqtt_keepalive [seconds]"));
     myDebug_P(PSTR("  set mqtt_retain [on | off]"));
+    myDebug_P(PSTR("  set mqtt_nestedjson [on | off]"));
     myDebug_P(PSTR("  set ntp_enabled <on | off>"));
     myDebug_P(PSTR("  set ntp_interval [minutes]"));
     myDebug_P(PSTR("  set ntp_timezone [n]"));
@@ -824,6 +971,7 @@ void MyESP::_printSetCommands() {
     myDebug_P(PSTR("  mqtt_retain=%s"), (_mqtt_retain) ? "on" : "off");
     myDebug_P(PSTR("  mqtt_qos=%d"), _mqtt_qos);
     myDebug_P(PSTR("  mqtt_heartbeat=%s"), (_mqtt_heartbeat) ? "on" : "off");
+    myDebug_P(PSTR("  mqtt_nestedjson=%s"), (_mqtt_nestedjson) ? "on" : "off");
 
 #ifdef FORCE_SERIAL
     myDebug_P(PSTR("  serial=%s (this is always when compiled with -DFORCE_SERIAL)"), (_general_serial) ? "on" : "off");
@@ -876,9 +1024,10 @@ char * MyESP::_telnet_readWord(bool allow_all_chars) {
 // messy code but effective since we don't have too many settings
 // wc is word count, number of parameters after the 'set' command
 bool MyESP::_changeSetting(uint8_t wc, const char * setting, const char * value) {
-    bool save_config        = false;
-    bool save_custom_config = false;
-    bool restart            = false;
+    bool save_config = false;
+    bool restart     = false;
+
+    MYESP_FSACTION_t save_custom_config = MYESP_FSACTION_ERR; // default
 
     // check for our internal commands first
     if (strcmp(setting, "erase") == 0) {
@@ -927,6 +1076,8 @@ bool MyESP::_changeSetting(uint8_t wc, const char * setting, const char * value)
         restart     = save_config;
     } else if (strcmp(setting, "mqtt_heartbeat") == 0) {
         save_config = fs_setSettingValue(&_mqtt_heartbeat, value, false);
+    } else if (strcmp(setting, "mqtt_nestedjson") == 0) {
+        save_config = fs_setSettingValue(&_mqtt_nestedjson, value, false);
     } else if (strcmp(setting, "ntp_enabled") == 0) {
         save_config = fs_setSettingValue(&_ntp_enabled, value, false);
     } else if (strcmp(setting, "ntp_interval") == 0) {
@@ -941,13 +1092,14 @@ bool MyESP::_changeSetting(uint8_t wc, const char * setting, const char * value)
         // finally check for any custom commands
         if (_fs_setlist_callback_f) {
             save_custom_config = (_fs_setlist_callback_f)(MYESP_FSACTION_SET, wc, setting, value);
+            restart            = (save_custom_config == MYESP_FSACTION_RESTART);
         }
     }
 
     bool ok = false;
 
     // if we were able to recognize the set command, continue
-    if ((save_config || save_custom_config)) {
+    if ((save_config || save_custom_config != MYESP_FSACTION_ERR)) {
         // check for 2 params
         if (value == nullptr) {
             myDebug_P(PSTR("%s has been reset to its default value."), setting);
@@ -963,7 +1115,7 @@ bool MyESP::_changeSetting(uint8_t wc, const char * setting, const char * value)
     }
 
     // and see if we need to also save for custom config
-    if (save_custom_config) {
+    if (save_custom_config != MYESP_FSACTION_ERR) {
         ok = _fs_createCustomConfig();
     }
 
@@ -1046,7 +1198,7 @@ void MyESP::_telnetCommand(char * commandLine) {
 
     // print mqtt log command
     if (strcmp(ptrToCommandName, "mqttlog") == 0) {
-        _printMQTTLog(wc != 1);
+        _printMQTTLog();
         return;
     }
 
@@ -1459,14 +1611,14 @@ void MyESP::showSystemStats() {
 /*
  * Send heartbeat via MQTT with all system data
  */
-void MyESP::_heartbeatCheck(bool force) {
+void MyESP::heartbeatCheck(bool force) {
     static uint32_t last_heartbeat = 0;
 
     if ((millis() - last_heartbeat > MYESP_HEARTBEAT_INTERVAL) || force) {
         last_heartbeat = millis();
 
 #ifdef MYESP_DEBUG
-        _printHeap("[HEARTBEAT] ");
+        _printHeap("[HEARTBEAT]");
 #endif
         if (!isMQTTConnected() || !(_mqtt_heartbeat)) {
             return;
@@ -1481,11 +1633,10 @@ void MyESP::_heartbeatCheck(bool force) {
         uint32_t free_memory   = ESP.getFreeHeap();
         uint8_t  mem_available = 100 * free_memory / total_memory; // as a %
 
-        StaticJsonDocument<MYESP_JSON_MAXSIZE_SMALL> doc;
-        JsonObject                                   rootHeartbeat = doc.to<JsonObject>();
+        const size_t                 capacity = JSON_OBJECT_SIZE(6);
+        StaticJsonDocument<capacity> doc;
+        JsonObject                   rootHeartbeat = doc.to<JsonObject>();
 
-        //rootHeartbeat["version"]         = _app_version;
-        //rootHeartbeat["IP"]              = WiFi.localIP().toString();
         rootHeartbeat["rssid"]            = getWifiQuality();
         rootHeartbeat["load"]             = getSystemLoadAverage();
         rootHeartbeat["uptime"]           = _getUptime();
@@ -1493,10 +1644,7 @@ void MyESP::_heartbeatCheck(bool force) {
         rootHeartbeat["tcpdrops"]         = _getSystemDropoutCounter();
         rootHeartbeat["mqttpublishfails"] = _mqtt_publish_fails;
 
-        char data[300] = {0};
-        serializeJson(doc, data, sizeof(data));
-
-        (void)mqttPublish(MQTT_TOPIC_HEARTBEAT, data, false); // send to MQTT with retain off
+        mqttPublish(MQTT_TOPIC_HEARTBEAT, doc, false); // send to MQTT with retain off
     }
 }
 
@@ -1509,13 +1657,13 @@ void MyESP::heartbeatPrint() {
     uint32_t total_memory = _getInitialFreeHeap();
     uint32_t free_memory  = ESP.getFreeHeap();
 
-    myDebug("[%d] uptime:%d bytesfree:%d (%2u%%), load:%d, dropouts:%d",
-            i++,
-            _getUptime(),
-            free_memory,
-            100 * free_memory / total_memory,
-            getSystemLoadAverage(),
-            _getSystemDropoutCounter()
+    myDebug_P(PSTR("[%d] uptime:%d bytesfree:%d (%2u%%), load:%d, dropouts:%d"),
+              i++,
+              _getUptime(),
+              free_memory,
+              100 * free_memory / total_memory,
+              getSystemLoadAverage(),
+              _getSystemDropoutCounter()
 
     );
 }
@@ -1748,17 +1896,18 @@ bool MyESP::_fs_loadConfig() {
     _general_serial = general["serial"];
 #endif
 
-    JsonObject mqtt = doc["mqtt"];
-    _mqtt_enabled   = mqtt["enabled"];
-    _mqtt_heartbeat = mqtt["heartbeat"];
-    _mqtt_ip        = strdup(mqtt["ip"] | "");
-    _mqtt_user      = strdup(mqtt["user"] | "");
-    _mqtt_port      = mqtt["port"] | MQTT_PORT;
-    _mqtt_keepalive = mqtt["keepalive"] | MQTT_KEEPALIVE;
-    _mqtt_retain    = mqtt["retain"];
-    _mqtt_qos       = mqtt["qos"] | MQTT_QOS;
-    _mqtt_password  = strdup(mqtt["password"] | "");
-    _mqtt_base      = strdup(mqtt["base"] | MQTT_BASE_DEFAULT);
+    JsonObject mqtt  = doc["mqtt"];
+    _mqtt_enabled    = mqtt["enabled"];
+    _mqtt_heartbeat  = mqtt["heartbeat"];
+    _mqtt_ip         = strdup(mqtt["ip"] | "");
+    _mqtt_user       = strdup(mqtt["user"] | "");
+    _mqtt_port       = mqtt["port"] | MQTT_PORT;
+    _mqtt_keepalive  = mqtt["keepalive"] | MQTT_KEEPALIVE;
+    _mqtt_retain     = mqtt["retain"];
+    _mqtt_qos        = mqtt["qos"] | MQTT_QOS;
+    _mqtt_nestedjson = mqtt["nestedjson"]; // default to on
+    _mqtt_password   = strdup(mqtt["password"] | "");
+    _mqtt_base       = strdup(mqtt["base"] | MQTT_BASE_DEFAULT);
 
     JsonObject ntp = doc["ntp"];
     _ntp_server    = strdup(ntp["server"] | "");
@@ -1961,17 +2110,18 @@ bool MyESP::_fs_writeConfig() {
     general["log_ip"]     = _general_log_ip;
     general["version"]    = _app_version;
 
-    JsonObject mqtt   = doc.createNestedObject("mqtt");
-    mqtt["enabled"]   = _mqtt_enabled;
-    mqtt["heartbeat"] = _mqtt_heartbeat;
-    mqtt["ip"]        = _mqtt_ip;
-    mqtt["user"]      = _mqtt_user;
-    mqtt["port"]      = _mqtt_port;
-    mqtt["qos"]       = _mqtt_qos;
-    mqtt["keepalive"] = _mqtt_keepalive;
-    mqtt["retain"]    = _mqtt_retain;
-    mqtt["password"]  = _mqtt_password;
-    mqtt["base"]      = _mqtt_base;
+    JsonObject mqtt    = doc.createNestedObject("mqtt");
+    mqtt["enabled"]    = _mqtt_enabled;
+    mqtt["heartbeat"]  = _mqtt_heartbeat;
+    mqtt["ip"]         = _mqtt_ip;
+    mqtt["user"]       = _mqtt_user;
+    mqtt["port"]       = _mqtt_port;
+    mqtt["qos"]        = _mqtt_qos;
+    mqtt["keepalive"]  = _mqtt_keepalive;
+    mqtt["retain"]     = _mqtt_retain;
+    mqtt["password"]   = _mqtt_password;
+    mqtt["base"]       = _mqtt_base;
+    mqtt["nestedjson"] = _mqtt_nestedjson;
 
     JsonObject ntp  = doc.createNestedObject("ntp");
     ntp["server"]   = _ntp_server;
@@ -2071,6 +2221,11 @@ void MyESP::_calculateLoad() {
         _load_average  = 100 - (100 * load_counter / load_counter_max);
         last_loadcheck = millis();
     }
+}
+
+// returns true if nested JSON setting is enabled
+bool MyESP::mqttUseNestedJson() {
+    return _mqtt_nestedjson;
 }
 
 // returns true is MQTT is alive
@@ -2288,7 +2443,7 @@ void MyESP::writeLogEvent(const uint8_t type, const char * msg) {
 // Handles WebSocket Events
 void MyESP::_onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t * data, size_t len) {
     if (type == WS_EVT_ERROR) {
-        myDebug("[WEB] WebSocket[%s][%u] error(%u): %s\r\n", server->url(), client->id(), *((uint16_t *)arg), (char *)data);
+        myDebug_P(PSTR("[WEB] WebSocket[%s][%u] error(%u): %s\r\n"), server->url(), client->id(), *((uint16_t *)arg), (char *)data);
     } else if (type == WS_EVT_DATA) {
         AwsFrameInfo * info    = (AwsFrameInfo *)arg;
         uint64_t       index   = info->index;
@@ -2420,7 +2575,7 @@ bool MyESP::_fs_sendConfig() {
 
 // send custom status via ws
 void MyESP::_sendCustomStatus() {
-    DynamicJsonDocument doc(MYESP_JSON_MAXSIZE_LARGE);
+    DynamicJsonDocument doc(MYESP_JSON_MAXSIZE_MEDIUM);
 
     JsonObject root = doc.to<JsonObject>();
 
@@ -2436,7 +2591,7 @@ void MyESP::_sendCustomStatus() {
         (_web_callback_f)(root);
     }
 
-    char   buffer[MYESP_JSON_MAXSIZE_LARGE];
+    char   buffer[MYESP_JSON_MAXSIZE_MEDIUM];
     size_t len = serializeJson(root, buffer);
 
 #ifdef MYESP_DEBUG
@@ -2452,13 +2607,13 @@ void MyESP::_sendStatus() {
     uint32_t total_memory = _getInitialFreeHeap();
     uint32_t free_memory  = ESP.getFreeHeap();
 
-    DynamicJsonDocument doc(MQTT_MAX_PAYLOAD_SIZE_LARGE);
+    DynamicJsonDocument doc(MYESP_JSON_MAXSIZE_MEDIUM);
     JsonObject          root = doc.to<JsonObject>();
     root["command"]          = "status";
 
     FSInfo fsinfo;
     if (!SPIFFS.info(fsinfo)) {
-        myDebug("[SYSTEM] Error getting info on SPIFFS");
+        myDebug_P(PSTR("[SYSTEM] Error getting info on SPIFFS"));
     } else {
         root["availspiffs"] = (fsinfo.totalBytes - fsinfo.usedBytes) / 1000;
         root["spiffssize"]  = (fsinfo.totalBytes / 1000);
@@ -2496,31 +2651,7 @@ void MyESP::_sendStatus() {
     sprintf(uptime, "%d day%s %d hour%s %d minute%s %d second%s", d, (d == 1) ? "" : "s", h, (h == 1) ? "" : "s", m, (m == 1) ? "" : "s", sec, (sec == 1) ? "" : "s");
     root["uptime"] = uptime;
 
-    char topic_s[MQTT_MAX_TOPIC_SIZE] = {0};
-    if (_hasValue(_mqtt_base)) {
-        strlcpy(topic_s, _mqtt_base, sizeof(topic_s));
-        strlcat(topic_s, "/", sizeof(topic_s));
-        strlcat(topic_s, _general_hostname, sizeof(topic_s));
-    } else {
-        strlcpy(topic_s, _general_hostname, sizeof(topic_s));
-    }
-    strlcat(topic_s, "/", sizeof(topic_s));
-    root["mqttloghdr"] = topic_s;
-
-    // create MQTT log
-    JsonArray list = root.createNestedArray("mqttlog");
-
-    // only send Publish
-    for (uint8_t i = 0; i < MYESP_MQTTLOG_MAX; i++) {
-        if ((MQTT_log[i].type == 1) && (MQTT_log[i].topic != nullptr)) {
-            JsonObject item = list.createNestedObject();
-            item["topic"]   = MQTT_log[i].topic;
-            item["payload"] = MQTT_log[i].payload;
-            item["time"]    = MQTT_log[i].timestamp;
-        }
-    }
-
-    char   buffer[MQTT_MAX_PAYLOAD_SIZE_LARGE];
+    char   buffer[MYESP_JSON_MAXSIZE_MEDIUM];
     size_t len = serializeJson(root, buffer);
 
     _ws->textAll(buffer, len);
@@ -2677,87 +2808,13 @@ void MyESP::_printHeap(const char * prefix) {
     uint32_t total_memory = _getInitialFreeHeap();
     uint32_t free_memory  = ESP.getFreeHeap();
 
-    myDebug("%s Free Heap: %d bytes initially | %d bytes used (%2u%%) | %d bytes free (%2u%%)",
-            prefix,
-            total_memory,
-            total_memory - free_memory,
-            100 * (total_memory - free_memory) / total_memory,
-            free_memory,
-            100 * free_memory / total_memory);
-}
-
-// print MQTT log - everything that was published last per topic
-void MyESP::_printMQTTLog(bool show_sub = false) {
-    myDebug_P(PSTR("MQTT publish log:"));
-    uint8_t i;
-
-    for (i = 0; i < MYESP_MQTTLOG_MAX; i++) {
-        if ((MQTT_log[i].topic != nullptr) && (MQTT_log[i].type == MYESP_MQTTLOGTYPE_PUBLISH)) {
-            myDebug_P(PSTR("  (%02d:%02d:%02d) Topic: %s Payload: %s"),
-                      to_hour(MQTT_log[i].timestamp),
-                      to_minute(MQTT_log[i].timestamp),
-                      to_second(MQTT_log[i].timestamp),
-                      MQTT_log[i].topic,
-                      MQTT_log[i].payload);
-        }
-    }
-
-    // show subscriptions
-    if (show_sub) {
-        myDebug_P(PSTR("")); // newline
-        myDebug_P(PSTR("MQTT subscriptions:"));
-
-        for (i = 0; i < MYESP_MQTTLOG_MAX; i++) {
-            if ((MQTT_log[i].topic != nullptr) && (MQTT_log[i].type == MYESP_MQTTLOGTYPE_SUBSCRIBE)) {
-                myDebug_P(PSTR("  Topic: %s"), MQTT_log[i].topic);
-            }
-        }
-    }
-
-    myDebug_P(PSTR("")); // newline
-}
-
-// add an MQTT log entry to our buffer
-void MyESP::_addMQTTLog(const char * topic, const char * payload, const MYESP_MQTTLOGTYPE_t type) {
-    static uint8_t logCount   = 0;
-    uint8_t        logPointer = 0;
-    bool           found      = false;
-
-#ifdef MYESP_DEBUG
-    myDebug("_addMQTTLog [#%d] %s (%d) [%s] (%d)", logCount, topic, strlen(topic), payload, strlen(payload));
-#endif
-
-    // find the topic
-    // topics must be unique for either publish or subscribe
-    while ((logPointer < MYESP_MQTTLOG_MAX) && (_hasValue(MQTT_log[logPointer].topic))) {
-        if ((strcmp(MQTT_log[logPointer].topic, topic) == 0) && (MQTT_log[logPointer].type == type)) {
-            found = true;
-            break;
-        }
-        logPointer++;
-    }
-
-    // if not found add it and increment next free space pointer
-    if (!found) {
-        logPointer = logCount;
-        if (++logCount == MYESP_MQTTLOG_MAX) {
-            logCount = 0; // rotate
-        }
-    }
-
-    // delete old record
-    if (MQTT_log[logPointer].topic) {
-        free(MQTT_log[logPointer].topic);
-    }
-    if (MQTT_log[logPointer].payload) {
-        free(MQTT_log[logPointer].payload);
-    }
-
-    // and add new record
-    MQTT_log[logPointer].type      = type;
-    MQTT_log[logPointer].topic     = strdup(topic);
-    MQTT_log[logPointer].payload   = strdup(payload);
-    MQTT_log[logPointer].timestamp = now();
+    myDebug_P(PSTR("%s Free Heap: %d bytes initially | %d bytes used (%2u%%) | %d bytes free (%2u%%)"),
+              prefix,
+              total_memory,
+              total_memory - free_memory,
+              100 * (total_memory - free_memory) / total_memory,
+              free_memory,
+              100 * free_memory / total_memory);
 }
 
 // send UTC time via ws
@@ -2896,7 +2953,7 @@ void MyESP::begin(const char * app_hostname, const char * app_name, const char *
 void MyESP::loop() {
     _calculateLoad();
     _systemCheckLoop();
-    _heartbeatCheck();
+    heartbeatCheck();
     _bootupSequence(); // see if a reset was pressed during bootup
 
     jw.loop(); // WiFi
@@ -2909,6 +2966,14 @@ void MyESP::loop() {
 
     _mqttConnect(); // MQTT
 
+    // every second check MQTT queue for publishing
+    static unsigned long lastMqttPoll  = 0;
+    unsigned long        currentMillis = millis();
+    if ((unsigned long)(currentMillis - lastMqttPoll) >= MQTT_PUBLISH_WAIT) {
+        _mqttPublishQueue();
+        lastMqttPoll = currentMillis;
+    }
+
     // SysLog
     uuid::loop();
     syslog.loop();
@@ -2919,7 +2984,7 @@ void MyESP::loop() {
     }
 
     if (_formatreq) {
-        myDebug("[SYSTEM] Factory reset initiated. Please wait. System will automatically restart when complete...");
+        myDebug_P(PSTR("[SYSTEM] Factory reset initiated. Please wait. System will automatically restart when complete..."));
         SPIFFS.end();
         _ws->enable(false);
         SPIFFS.format();
@@ -2929,7 +2994,7 @@ void MyESP::loop() {
 
     if (_shouldRestart) {
         writeLogEvent(MYESP_SYSLOG_INFO, "System is restarting");
-        myDebug("[SYSTEM] Restarting...");
+        myDebug_P(PSTR("[SYSTEM] Restarting..."));
         _deferredReset(500, CUSTOM_RESET_TERMINAL);
         ESP.restart();
     }

@@ -1628,7 +1628,7 @@ void _process_ISM1Set(_EMS_RxTelegram * EMS_RxTelegram) {
     // only trigger if at offset 6
     _setValue(EMS_RxTelegram, &EMS_SolarModule.setpoint_maxBottomTemp, 6);
 
-    // TODO: we may need to convert this to a single byte like
+    // Note: we may need to convert this to a single byte like
     // EMS_SolarModule.setpoint_maxBottomTemp = EMS_RxTelegram->data[0];
 }
 
@@ -1759,9 +1759,9 @@ bool _addDevice(_EMS_DEVICE_TYPE device_type, uint8_t product_id, uint8_t device
  */
 void _process_UBADevices(_EMS_RxTelegram * EMS_RxTelegram) {
     // exit it length is incorrect (13 or 15 bytes long)
-    // or didn't come from the boiler
+    // or it wasn't specifically for us
     // or we can't write to the EMS bus yet
-    if ((EMS_RxTelegram->data_length > EMS_SYS_DEVICEMAP_LENGTH) || (EMS_RxTelegram->src != EMS_ID_BOILER) || (ems_getTxDisabled())) {
+    if ((EMS_RxTelegram->data_length > EMS_SYS_DEVICEMAP_LENGTH) || (EMS_RxTelegram->dest != EMS_Sys_Status.emsbusid) || (ems_getTxDisabled())) {
         return;
     }
 
@@ -1772,24 +1772,24 @@ void _process_UBADevices(_EMS_RxTelegram * EMS_RxTelegram) {
             for (uint8_t bit = 0; bit < 8; bit++) {
                 if (byte & 0x01) {
                     uint8_t device_id = ((data_byte + 1) * 8) + bit;
+                    // see if we already have this device in our list
                     // ignore ourselves, we're not an EMS device
-                    if ((device_id != EMS_Sys_Status.emsbusid) && (!Devices.empty())) {
-                        // see if we already have this device in our list
+                    if (device_id != EMS_Sys_Status.emsbusid) {
                         bool exists = false;
-                        for (std::list<_Detected_Device>::iterator it = Devices.begin(); it != Devices.end(); ++it) {
-                            if (it->device_id == device_id) {
-                                exists = true;
-                                break;
+                        if (!Devices.empty()) {
+                            for (std::list<_Detected_Device>::iterator it = Devices.begin(); it != Devices.end(); ++it) {
+                                if (it->device_id == device_id) {
+                                    exists = true;
+                                }
                             }
                         }
                         if (!exists) {
-                            myDebug("[EMS] Detected new EMS Device with ID 0x%02X. Fetching version information...", device_id);
+                            myDebug_P(PSTR("[EMS] Detected new EMS Device with ID 0x%02X. Fetching version information..."), device_id);
                             ems_doReadCommand(EMS_TYPE_Version, device_id); // get version, but ignore ourselves
                         }
                     }
-                    // advance 1 bit
-                    byte = byte >> 1;
                 }
+                byte = byte >> 1; // advance 1 bit
             }
         }
     }
@@ -1932,7 +1932,7 @@ void ems_discoverModels() {
 }
 
 /**
- * Print the Tx queue - for debugging
+ * Print the Tx queue
  */
 void ems_printTxQueue() {
     _EMS_TxTelegram EMS_TxTelegram;
@@ -2254,13 +2254,13 @@ void ems_printDevices() {
                           it->version);
             }
         }
-        myDebug_P(PSTR("")); // newline
 
         if (have_unknowns) {
-            myDebug_P(PSTR("One or more devices are not recognized by EMS-ESP. Please report this in GitHub."));
+            myDebug_P(PSTR("")); // newline
+            myDebug_P(PSTR("One or more devices are not recognized by EMS-ESP. Please report this back in GitHub."));
         }
     } else {
-        myDebug_P(PSTR("No were devices recognized. This may be because Tx is disabled or failing."));
+        myDebug_P(PSTR("No devices were recognized. This may be because Tx is disabled or failing."));
     }
 
     myDebug_P(PSTR("")); // newline
