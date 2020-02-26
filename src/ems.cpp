@@ -195,8 +195,10 @@ void ems_init() {
     // Solar Module values
     EMS_SolarModule.collectorTemp          = EMS_VALUE_SHORT_NOTSET; // collector temp from SM10/SM100/SM200
     EMS_SolarModule.bottomTemp             = EMS_VALUE_SHORT_NOTSET; // bottom temp from SM10/SM100/SM200
+    EMS_SolarModule.bottomTemp2            = EMS_VALUE_SHORT_NOTSET; // bottom temp 2 from SM200
     EMS_SolarModule.pumpModulation         = EMS_VALUE_INT_NOTSET;   // modulation solar pump SM10/SM100/SM200
     EMS_SolarModule.pump                   = EMS_VALUE_BOOL_NOTSET;  // pump active
+    EMS_SolarModule.valveStatus            = EMS_VALUE_BOOL_NOTSET;  // valve status from SM200
     EMS_SolarModule.EnergyLastHour         = EMS_VALUE_USHORT_NOTSET;
     EMS_SolarModule.EnergyToday            = EMS_VALUE_USHORT_NOTSET;
     EMS_SolarModule.EnergyTotal            = EMS_VALUE_USHORT_NOTSET;
@@ -1145,6 +1147,30 @@ void _process_RC10StatusMessage(_EMS_RxTelegram * EMS_RxTelegram) {
 }
 
 /**
+ * type 0xAD - data from the RC20 thermostat (0x17)
+ * e.g. 17 00 AD 0D 2E 
+ */
+void _process_RC20StatusMessage2(_EMS_RxTelegram * EMS_RxTelegram) {
+    uint8_t hc                   = EMS_THERMOSTAT_DEFAULTHC - 1; // use HC1
+    EMS_Thermostat.hc[hc].active = true;
+
+    // _setValue8(EMS_RxTelegram, &EMS_Thermostat.hc[hc].setpoint_roomTemp, 0); // is * 2, force as single byte
+}
+
+/**
+ * type 0xAE - data from the RC20 thermostat (0x17)
+ * e.g. 17 00 AE 00 80 12 2E 00 D0 00 00 64
+ */
+void _process_RC20StatusMessage3(_EMS_RxTelegram * EMS_RxTelegram) {
+    uint8_t hc                   = EMS_THERMOSTAT_DEFAULTHC - 1; // use HC1
+    EMS_Thermostat.hc[hc].active = true;
+
+    _setValue(EMS_RxTelegram, &EMS_Thermostat.hc[hc].mode_type, 0, 7);       // day/night MSB 7th bit is day
+    _setValue8(EMS_RxTelegram, &EMS_Thermostat.hc[hc].setpoint_roomTemp, 2); // is * 2, force as single byte
+    _setValue(EMS_RxTelegram, &EMS_Thermostat.hc[hc].curr_roomTemp, 3);      // is * 10
+}
+
+/**
  * type 0x91 - data from the RC20 thermostat (0x17) - 15 bytes long
  * For reading the temp values only
  * received every 60 seconds
@@ -1494,18 +1520,23 @@ void _process_SM10Monitor(_EMS_RxTelegram * EMS_RxTelegram) {
 }
 
 /*
- * SM100Monitor - type 0x0262 EMS+
+ * SM100Monitor - type 0x0262 EMS+ - for SM100 and SM200
+ * e.g. B0 0B FF 00 02 62 00 44 02 7A 80 00 80 00 80 00 80 00 80 00 80 00 00 7C 80 00 80 00 80 00 80
  * e.g, 30 00 FF 00 02 62 01 AC
  *      30 00 FF 18 02 62 80 00
  *      30 00 FF 00 02 62 01 A1 - for bottom temps
+ * bytes 0+1 = TS1 Temperature sensor for collector
+ * bytes 2+3 = TS2 Temperature sensor bottom cylinder 1
+ * bytes 16+17 = TS5 Temperature sensor bottom cylinder 2
  */
 void _process_SM100Monitor(_EMS_RxTelegram * EMS_RxTelegram) {
     _setValue(EMS_RxTelegram, &EMS_SolarModule.collectorTemp, 0); // is *10
     _setValue(EMS_RxTelegram, &EMS_SolarModule.bottomTemp, 2);    // is *10
+    _setValue(EMS_RxTelegram, &EMS_SolarModule.bottomTemp2, 16);  // is *10
 }
 
 /*
- * SM100Status - type 0x0264 EMS+ for pump modulation
+ * SM100Status - type 0x0264 EMS+ for pump modulation - for SM100 and SM200
  * e.g. 30 00 FF 09 02 64 64 = 100%
  *      30 00 FF 09 02 64 1E = 30%
  */
@@ -1514,10 +1545,14 @@ void _process_SM100Status(_EMS_RxTelegram * EMS_RxTelegram) {
 }
 
 /*
- * SM100Status2 - type 0x026A EMS+ for pump on/off at offset 0x0A
+ * SM100Status2 - type 0x026A EMS+ for pump on/off at offset 0x0A - for SM100 and SM200
+ * e.g. B0 00 FF 00 02 6A 03 03 03 03 01 03 03 03 03 03 01 03 
+ * byte 4 = VS2 3-way valve for cylinder 2 : test=01, on=04 and off=03
+ * byte 10 = PS1 Solar circuit pump for collector array 1: test=01, on=04 and off=03
  */
 void _process_SM100Status2(_EMS_RxTelegram * EMS_RxTelegram) {
-    _setValue(EMS_RxTelegram, &EMS_SolarModule.pump, 10, 2); // 03=off 04=on
+    _setValue(EMS_RxTelegram, &EMS_SolarModule.valveStatus, 4, 2); // on if bit 2 set
+    _setValue(EMS_RxTelegram, &EMS_SolarModule.pump, 10, 2);       // on if bit 2 set
 }
 
 /*
@@ -1998,7 +2033,7 @@ void ems_getSolarModuleValues() {
         if (EMS_SolarModule.device_flags == EMS_DEVICE_FLAG_SM10) {
             ems_doReadCommand(EMS_TYPE_SM10Monitor, EMS_SolarModule.device_id); // fetch all from SM10Monitor
         } else if (EMS_SolarModule.device_flags == EMS_DEVICE_FLAG_SM100) {
-            ems_doReadCommand(EMS_TYPE_SM100Monitor, EMS_SolarModule.device_id); // fetch all from SM100Monitor
+            ems_doReadCommand(EMS_TYPE_SM100Monitor, EMS_SolarModule.device_id); // fetch all from SM100Monitor (also for SM200)
         }
     }
 }
@@ -2803,13 +2838,16 @@ void ems_testTelegram(uint8_t test_num) {
  */
 const _EMS_Type EMS_Types[] = {
 
+    // types that we know about but don't have handlers yet
+    {EMS_DEVICE_UPDATE_FLAG_NONE, EMS_TYPE_UBAFlags, "UBAFlags", nullptr},
+    {EMS_DEVICE_UPDATE_FLAG_NONE, EMS_TYPE_UBAMaintenanceStatusMessage, "UBAMaintenanceStatusMessage", nullptr},
+    {EMS_DEVICE_UPDATE_FLAG_NONE, EMS_TYPE_MC10Status, "MC10Status", nullptr},
+
     // common
     {EMS_DEVICE_UPDATE_FLAG_NONE, EMS_TYPE_Version, "Version", _process_Version},
-    {EMS_DEVICE_UPDATE_FLAG_NONE, EMS_TYPE_UBADevices, "UBADevices", _process_UBADevices},
-    {EMS_DEVICE_UPDATE_FLAG_NONE, EMS_TYPE_RCTime, "RCTime", _process_RCTime},
-    {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RCOutdoorTempMessage, "RCOutdoorTempMessage", _process_RCOutdoorTempMessage},
 
     // UBA/Boiler
+    {EMS_DEVICE_UPDATE_FLAG_NONE, EMS_TYPE_UBADevices, "UBADevices", _process_UBADevices},
     {EMS_DEVICE_UPDATE_FLAG_BOILER, EMS_TYPE_UBAMonitorFast, "UBAMonitorFast", _process_UBAMonitorFast},
     {EMS_DEVICE_UPDATE_FLAG_BOILER, EMS_TYPE_UBAMonitorSlow, "UBAMonitorSlow", _process_UBAMonitorSlow},
     {EMS_DEVICE_UPDATE_FLAG_BOILER, EMS_TYPE_UBAMonitorWWMessage, "UBAMonitorWWMessage", _process_UBAMonitorWWMessage},
@@ -2823,7 +2861,7 @@ const _EMS_Type EMS_Types[] = {
     {EMS_DEVICE_UPDATE_FLAG_BOILER, EMS_TYPE_UBAMonitorFast2, "UBAMonitorFast2", _process_UBAMonitorFast2},
     {EMS_DEVICE_UPDATE_FLAG_BOILER, EMS_TYPE_UBAMonitorSlow2, "UBAMonitorSlow2", _process_UBAMonitorSlow2},
 
-    // Solar Module devices
+    // Solar Module devices. Note SM100 also covers SM200
     {EMS_DEVICE_UPDATE_FLAG_SOLAR, EMS_TYPE_SM10Monitor, "SM10Monitor", _process_SM10Monitor},
     {EMS_DEVICE_UPDATE_FLAG_SOLAR, EMS_TYPE_SM100Monitor, "SM100Monitor", _process_SM100Monitor},
     {EMS_DEVICE_UPDATE_FLAG_SOLAR, EMS_TYPE_SM100Status, "SM100Status", _process_SM100Status},
@@ -2836,6 +2874,10 @@ const _EMS_Type EMS_Types[] = {
     {EMS_DEVICE_UPDATE_FLAG_HEATPUMP, EMS_TYPE_HPMonitor1, "HeatPumpMonitor1", _process_HPMonitor1},
     {EMS_DEVICE_UPDATE_FLAG_HEATPUMP, EMS_TYPE_HPMonitor2, "HeatPumpMonitor2", _process_HPMonitor2},
 
+    // Thermostats...
+    {EMS_DEVICE_UPDATE_FLAG_NONE, EMS_TYPE_RCTime, "RCTime", _process_RCTime},
+    {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RCOutdoorTempMessage, "RCOutdoorTempMessage", _process_RCOutdoorTempMessage},
+
     // RC10
     {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RC10Set, "RC10Set", _process_RC10Set},
     {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RC10StatusMessage, "RC10StatusMessage", _process_RC10StatusMessage},
@@ -2843,6 +2885,8 @@ const _EMS_Type EMS_Types[] = {
     // RC20 and RC20RF
     {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RC20Set, "RC20Set", _process_RC20Set},
     {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RC20StatusMessage, "RC20StatusMessage", _process_RC20StatusMessage},
+    {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RC20StatusMessage2, "RC20StatusMessage2", _process_RC20StatusMessage2},
+    {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RC20StatusMessage3, "RC20StatusMessage3", _process_RC20StatusMessage3},
 
     // RC30
     {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RC30Set, "RC30Set", _process_RC30Set},
@@ -2895,6 +2939,10 @@ uint8_t _EMS_Types_max = ArraySize(EMS_Types);
  * or -1 if not found
  */
 int8_t _ems_findType(uint16_t type) {
+    if (type == 0) {
+        return -1;
+    }
+
     uint8_t i         = 0;
     bool    typeFound = false;
     // scan through known ID types
@@ -2912,7 +2960,7 @@ int8_t _ems_findType(uint16_t type) {
 /**
  * print the telegram
  */
-void _printMessage(_EMS_RxTelegram * EMS_RxTelegram, const int show_type) {
+void _printMessage(_EMS_RxTelegram * EMS_RxTelegram, const int8_t show_type) {
     // only print if we have logging enabled
     if (EMS_Sys_Status.emsLogging < EMS_SYS_LOGGING_THERMOSTAT) {
         return;
@@ -2946,11 +2994,14 @@ void _printMessage(_EMS_RxTelegram * EMS_RxTelegram, const int show_type) {
     }
 
     // print type
+    // if we're been given an index to the type string, use that
     if (length) {
         char buffer[16];
         strlcat(output_str, ", ", sizeof(output_str));
         if (show_type != -1) {
             strlcat(output_str, EMS_Types[show_type].typeString, sizeof(output_str));
+        } else {
+            strlcat(output_str, "Type", sizeof(output_str));
         }
         strlcat(output_str, "(0x", sizeof(output_str));
 
@@ -2991,38 +3042,43 @@ void _printMessage(_EMS_RxTelegram * EMS_RxTelegram, const int show_type) {
  * and then call its callback if there is one defined
  */
 void _ems_processTelegram(_EMS_RxTelegram * EMS_RxTelegram) {
+    // first see if we know which type this. -1 if not found.
+    uint16_t type       = EMS_RxTelegram->type;
+    int8_t   type_index = _ems_findType(type);
+
     // ignore telegrams that don't have any data
     if (EMS_RxTelegram->data_length == 0) {
-        _printMessage(EMS_RxTelegram);
+        _printMessage(EMS_RxTelegram, type_index);
         return;
     }
 
-    // we're only interested in broadcast messages (dest is 0x00) or ones for us
+    // we're only interested in broadcast messages (dest is 0x00) or ones sent to us
     uint8_t dest = EMS_RxTelegram->dest;
     if ((dest != EMS_ID_NONE) && (dest != EMS_Sys_Status.emsbusid)) {
-        _printMessage(EMS_RxTelegram);
+        _printMessage(EMS_RxTelegram, type_index);
         return;
-    }
-
-    // see if we recognize the type first by scanning our known EMS types list
-    uint16_t type = EMS_RxTelegram->type;
-    int8_t   i    = _ems_findType(type);
-    if (i == -1) {
-        _printMessage(EMS_RxTelegram);
-        return; // not found
     }
 
     // we have a matching type ID, print the detailed telegram to the console
     if (EMS_Sys_Status.emsLogging == EMS_SYS_LOGGING_BASIC) {
-        myDebug_P(PSTR("<--- %s(0x%02X)"), EMS_Types[i].typeString, type);
+        if (type == -1) {
+            myDebug_P(PSTR("<--- Type(0x%02X)"), type);
+        } else {
+            myDebug_P(PSTR("<--- %s(0x%02X)"), EMS_Types[type_index].typeString, type);
+        }
     } else {
-        _printMessage(EMS_RxTelegram, i); // print with index to the Type string
+        _printMessage(EMS_RxTelegram, type_index); // print with index to the Type string
+    }
+
+    // quit if we don't know how to handle this type
+    if (type_index == -1) {
+        return;
     }
 
     // process it by calling its respective callback function
-    if ((EMS_Types[i].processType_cb) != nullptr) {
-        (void)EMS_Types[i].processType_cb(EMS_RxTelegram);
-        ems_Device_add_flags(EMS_Types[i].device_flag); // see if we need to flag something has changed
+    if ((EMS_Types[type_index].processType_cb) != nullptr) {
+        (void)EMS_Types[type_index].processType_cb(EMS_RxTelegram);
+        ems_Device_add_flags(EMS_Types[type_index].device_flag); // see if we need to flag something has changed
     }
 
     EMS_Sys_Status.emsTxStatus = EMS_TX_STATUS_IDLE;
