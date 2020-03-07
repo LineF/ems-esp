@@ -180,14 +180,14 @@ void ems_init() {
     EMS_Boiler.switchTemp  = EMS_VALUE_USHORT_NOTSET;
 
     // UBAMonitorWWMessage
-    EMS_Boiler.wWCurTmp       = EMS_VALUE_USHORT_NOTSET; // Warm Water current temperature
-    EMS_Boiler.wWStarts       = EMS_VALUE_LONG_NOTSET;   // Warm Water # starts
-    EMS_Boiler.wWWorkM        = EMS_VALUE_LONG_NOTSET;   // Warm Water # minutes
-    EMS_Boiler.wWOneTime      = EMS_VALUE_INT_NOTSET;    // Warm Water one time function on/off
-    EMS_Boiler.wWDesinfecting = EMS_VALUE_INT_NOTSET;    // Warm Water desinfection on/off
-    EMS_Boiler.wWReadiness    = EMS_VALUE_INT_NOTSET;    // Warm Water readiness on/off
-    EMS_Boiler.wWRecharging   = EMS_VALUE_INT_NOTSET;    // Warm Water recharge on/off
-    EMS_Boiler.wWTemperaturOK = EMS_VALUE_INT_NOTSET;    // Warm Water temperatur ok on/off
+    EMS_Boiler.wWCurTmp        = EMS_VALUE_USHORT_NOTSET; // Warm Water current temperature
+    EMS_Boiler.wWStarts        = EMS_VALUE_LONG_NOTSET;   // Warm Water # starts
+    EMS_Boiler.wWWorkM         = EMS_VALUE_LONG_NOTSET;   // Warm Water # minutes
+    EMS_Boiler.wWOneTime       = EMS_VALUE_INT_NOTSET;    // Warm Water one time function on/off
+    EMS_Boiler.wWDesinfecting  = EMS_VALUE_INT_NOTSET;    // Warm Water desinfection on/off
+    EMS_Boiler.wWReadiness     = EMS_VALUE_INT_NOTSET;    // Warm Water readiness on/off
+    EMS_Boiler.wWRecharging    = EMS_VALUE_INT_NOTSET;    // Warm Water recharge on/off
+    EMS_Boiler.wWTemperatureOK = EMS_VALUE_INT_NOTSET;    // Warm Water temperature ok on/off
 
     EMS_Boiler.wWCurFlow = EMS_VALUE_INT_NOTSET; // WW current flow temp
 
@@ -266,11 +266,12 @@ bool ems_getHeatPumpEnabled() {
     return (EMS_HeatPump.device_id != EMS_ID_NONE);
 }
 
-uint8_t ems_getThermostatModel() {
-    return (EMS_Thermostat.device_flags & 0x7F); // strip 7th bit
+// thermostat has already the 7th bit (to indicate write) stripped
+uint8_t ems_getThermostatFlags() {
+    return (EMS_Thermostat.device_flags);
 }
 
-uint8_t ems_getSolarModuleModel() {
+uint8_t ems_getSolarModuleFlags() {
     return (EMS_SolarModule.device_flags);
 }
 
@@ -665,7 +666,7 @@ void _ems_sendTelegram() {
     }
 
     // send the telegram to the UART Tx
-    _EMS_TX_STATUS _txStatus = emsuart_tx_buffer(EMS_TxTelegram.data, EMS_TxTelegram.length); // send the telegram to the UART Tx
+    _EMS_TX_STATUS _txStatus = emsuart_tx_buffer(EMS_TxTelegram.data, EMS_TxTelegram.length);
     if (EMS_TX_STATUS_OK == _txStatus || EMS_TX_STATUS_IDLE == _txStatus)
         EMS_Sys_Status.emsTxStatus = EMS_TX_STATUS_WAIT;
     else {
@@ -995,7 +996,7 @@ void _process_UBAMonitorWWMessage(_EMS_RxTelegram * EMS_RxTelegram) {
     _setValue(EMS_RxTelegram, &EMS_Boiler.wWDesinfecting, 5, 2);
     _setValue(EMS_RxTelegram, &EMS_Boiler.wWReadiness, 5, 3);
     _setValue(EMS_RxTelegram, &EMS_Boiler.wWRecharging, 5, 4);
-    _setValue(EMS_RxTelegram, &EMS_Boiler.wWTemperaturOK, 5, 5);
+    _setValue(EMS_RxTelegram, &EMS_Boiler.wWTemperatureOK, 5, 5);
     _setValue(EMS_RxTelegram, &EMS_Boiler.wWCurFlow, 9);
 }
 
@@ -1062,7 +1063,7 @@ void _process_UBAMonitorFast(_EMS_RxTelegram * EMS_RxTelegram) {
     // warm water storage sensors (if present)
     // wwStorageTemp2 is also used by some brands as the boiler temperature - see https://github.com/proddy/EMS-ESP/issues/206
     _setValue(EMS_RxTelegram, &EMS_Boiler.wwStorageTemp1, 9);  // 0x8300 if not available
-    _setValue(EMS_RxTelegram, &EMS_Boiler.wwStorageTemp2, 11); // 0x8000 if not available
+    _setValue(EMS_RxTelegram, &EMS_Boiler.wwStorageTemp2, 11); // 0x8000 if not available - this is boiler temp
 
     _setValue(EMS_RxTelegram, &EMS_Boiler.retTemp, 13);
     _setValue(EMS_RxTelegram, &EMS_Boiler.flameCurr, 15);
@@ -1385,7 +1386,7 @@ void _process_JunkersStatusMessage(_EMS_RxTelegram * EMS_RxTelegram) {
 
     _setValue(EMS_RxTelegram, &EMS_Thermostat.hc[hc].curr_roomTemp, EMS_OFFSET_JunkersStatusMessage_curr);         // value is * 10
     _setValue(EMS_RxTelegram, &EMS_Thermostat.hc[hc].setpoint_roomTemp, EMS_OFFSET_JunkersStatusMessage_setpoint); // value is * 10
-    _setValue(EMS_RxTelegram, &EMS_Thermostat.hc[hc].mode_type, EMS_OFFSET_JunkersStatusMessage_daymode);          // 3 = day, 2 = night
+    _setValue(EMS_RxTelegram, &EMS_Thermostat.hc[hc].mode_type, EMS_OFFSET_JunkersStatusMessage_daymode, 0);       // first bit 1=day, 0=night
     _setValue(EMS_RxTelegram, &EMS_Thermostat.hc[hc].mode, EMS_OFFSET_JunkersStatusMessage_mode);                  // 1 = manual, 2 = auto
 }
 
@@ -1466,28 +1467,32 @@ int8_t _getHeatingCircuit(_EMS_RxTelegram * EMS_RxTelegram) {
     case EMS_TYPE_RC35StatusMessage_HC1:
     case EMS_TYPE_RC35Set_HC1:
     case EMS_TYPE_JunkersStatusMessage_HC1:
-    case EMS_TYPE_JunkersSetMessage_HC1:
+    case EMS_TYPE_JunkersSetMessage1_HC1:
+    case EMS_TYPE_JunkersSetMessage2_HC1:
         hc = 0;
         break;
 
     case EMS_TYPE_RC35StatusMessage_HC2:
     case EMS_TYPE_RC35Set_HC2:
     case EMS_TYPE_JunkersStatusMessage_HC2:
-    case EMS_TYPE_JunkersSetMessage_HC2:
+    case EMS_TYPE_JunkersSetMessage1_HC2:
+    case EMS_TYPE_JunkersSetMessage2_HC2:
         hc = 1;
         break;
 
     case EMS_TYPE_RC35StatusMessage_HC3:
     case EMS_TYPE_RC35Set_HC3:
     case EMS_TYPE_JunkersStatusMessage_HC3:
-    case EMS_TYPE_JunkersSetMessage_HC3:
+    case EMS_TYPE_JunkersSetMessage1_HC3:
+    case EMS_TYPE_JunkersSetMessage2_HC3:
         hc = 2;
         break;
 
     case EMS_TYPE_RC35StatusMessage_HC4:
     case EMS_TYPE_RC35Set_HC4:
     case EMS_TYPE_JunkersStatusMessage_HC4:
-    case EMS_TYPE_JunkersSetMessage_HC4:
+    case EMS_TYPE_JunkersSetMessage1_HC4:
+    case EMS_TYPE_JunkersSetMessage2_HC4:
         hc = 3;
         break;
 
@@ -1836,6 +1841,16 @@ void _process_Version(_EMS_RxTelegram * EMS_RxTelegram) {
         brand = 0; // unknown
     }
 
+#ifdef EMSESP_SIMULATE
+    // override to emulate other thermostats - FR100
+    if (device_id == 0x17) {
+        brand     = 2;
+        device_id = 0x10;
+        //product_id = 107; // FR100
+        product_id = 192; // FW120
+    }
+#endif
+
     // first scan through matching boilers, as these are unique to DeviceID 0x08
     uint8_t i = 0;
     while (i < _EMS_Devices_max) {
@@ -2031,6 +2046,7 @@ void ems_getThermostatValues() {
         }
         break;
     case EMS_DEVICE_FLAG_RC300:
+    case EMS_DEVICE_FLAG_RC100:
         ems_doReadCommand(EMS_TYPE_RCPLUSStatusMessage_HC1, device_id);
         ems_doReadCommand(EMS_TYPE_RCPLUSStatusMessage_HC2, device_id);
         ems_doReadCommand(EMS_TYPE_RCPLUSStatusMessage_HC3, device_id);
@@ -2323,7 +2339,7 @@ void ems_sendRawTelegram(char * telegram) {
  * hc_num is 1 to 4
  * temptype 0=normal, 1=night temp, 2=day temp, 3=holiday temp
  */
-void ems_setThermostatTemp(float temperature, uint8_t hc_num, uint8_t temptype) {
+void ems_setThermostatTemp(float temperature, uint8_t hc_num, _THERMOSTAT_TEMP_MODE temptype) {
     if (!ems_getThermostatEnabled()) {
         myDebug_P(PSTR("Thermostat not online."));
         return;
@@ -2343,20 +2359,22 @@ void ems_setThermostatTemp(float temperature, uint8_t hc_num, uint8_t temptype) 
     EMS_TxTelegram.timestamp       = millis();            // set timestamp
     EMS_Sys_Status.txRetryCount    = 0;                   // reset retry counter
 
-    uint8_t model     = ems_getThermostatModel();
+    uint8_t model     = ems_getThermostatFlags();
     uint8_t device_id = EMS_Thermostat.device_id;
 
     EMS_TxTelegram.action = EMS_TX_TELEGRAM_WRITE;
     EMS_TxTelegram.dest   = device_id;
 
     char s[10] = {0};
-    if ((model == EMS_DEVICE_FLAG_RC35) || (model == EMS_DEVICE_FLAG_RC30N)) {
-        myDebug_P(PSTR("Setting new thermostat temperature to %s for heating circuit %d type %d (0=auto,1=night,2=day,3=holiday)"),
+    if (temptype != 0) {
+        myDebug_P(PSTR("Setting new thermostat temperature to %s for heating circuit %d temp mode %d (0=auto,1=night,2=day,3=holiday,4=nofrost,5=eco,6=heat)"),
                   _float_to_char(s, temperature),
                   hc_num,
                   temptype);
-    } else {
+    } else if (hc_num != 1) {
         myDebug_P(PSTR("Setting new thermostat temperature to %s for heating circuit %d"), _float_to_char(s, temperature), hc_num);
+    } else {
+        myDebug_P(PSTR("Setting new thermostat temperature to %s"), _float_to_char(s, temperature));
     }
 
     if (model == EMS_DEVICE_FLAG_RC10) {
@@ -2380,7 +2398,7 @@ void ems_setThermostatTemp(float temperature, uint8_t hc_num, uint8_t temptype) 
         EMS_TxTelegram.type_validate      = EMS_TxTelegram.type;
     }
 
-    else if (model == EMS_DEVICE_FLAG_RC300) {
+    else if ((model == EMS_DEVICE_FLAG_RC300) || (model == EMS_DEVICE_FLAG_RC100)) {
         // check mode to determine offset
         if (EMS_Thermostat.hc[hc_num - 1].mode == 1) {        // auto
             EMS_TxTelegram.offset = 0x08;                     // auto offset
@@ -2407,26 +2425,21 @@ void ems_setThermostatTemp(float temperature, uint8_t hc_num, uint8_t temptype) 
 
     else if ((model == EMS_DEVICE_FLAG_RC35) || (model == EMS_DEVICE_FLAG_RC30N)) {
         switch (temptype) {
-        case 1: // change the night temp
+        case THERMOSTAT_TEMP_MODE_NIGHT: // change the night temp
             EMS_TxTelegram.offset = EMS_OFFSET_RC35Set_temp_night;
             break;
-        case 2: // change the day temp
+        case THERMOSTAT_TEMP_MODE_DAY: // change the day temp
             EMS_TxTelegram.offset = EMS_OFFSET_RC35Set_temp_day;
             break;
-        case 3: // change the holiday temp
+        case THERMOSTAT_TEMP_MODE_HOLIDAY: // change the holiday temp
             EMS_TxTelegram.offset = EMS_OFFSET_RC35Set_temp_holiday;
             break;
         default:
-        case 0: // automatic selection, if no type is defined, we use the standard code
+        case THERMOSTAT_TEMP_MODE_AUTO: // automatic selection, if no type is defined, we use the standard code
             if (model == EMS_DEVICE_FLAG_RC35) {
-                // https://github.com/proddy/EMS-ESP/issues/310
-                EMS_TxTelegram.offset = EMS_OFFSET_RC35Set_seltemp;
+                EMS_TxTelegram.offset = EMS_OFFSET_RC35Set_seltemp; // https://github.com/proddy/EMS-ESP/issues/310
             } else {
-                if (EMS_Thermostat.hc[hc_num - 1].mode_type == 0) {
-                    EMS_TxTelegram.offset = EMS_OFFSET_RC35Set_temp_night;
-                } else if (EMS_Thermostat.hc[hc_num - 1].mode_type == 1) {
-                    EMS_TxTelegram.offset = EMS_OFFSET_RC35Set_temp_day;
-                }
+                EMS_TxTelegram.offset = (EMS_Thermostat.hc[hc_num - 1].mode_type == 0) ? EMS_OFFSET_RC35Set_temp_night : EMS_OFFSET_RC35Set_temp_day;
             }
             break;
         }
@@ -2447,43 +2460,50 @@ void ems_setThermostatTemp(float temperature, uint8_t hc_num, uint8_t temptype) 
         EMS_TxTelegram.type_validate = EMS_TxTelegram.type;
     }
 
-    else if (model == EMS_DEVICE_FLAG_JUNKERS) {
-        // All Junkers use EMS+. I think.
-        EMS_TxTelegram.emsplus = true;
-        switch (temptype) {
-        case 1: // change the no frost temp
-            EMS_TxTelegram.offset = EMS_OFFSET_JunkersSetMessage_no_frost_temp;
-            break;
-        case 2: // change the night temp
-            EMS_TxTelegram.offset = EMS_OFFSET_JunkersSetMessage_night_temp;
-            break;
-        case 3: // change the day temp
-            EMS_TxTelegram.offset = EMS_OFFSET_JunkersSetMessage_day_temp;
-            break;
-        default:
-        case 0: // automatic selection, if no type is defined, we use the standard code
-            // TODO: not sure if this is correct for Junkers
-            if (EMS_Thermostat.hc[hc_num - 1].mode_type == 0) {
+    else if ((model == EMS_DEVICE_FLAG_JUNKERS1) || (model == EMS_DEVICE_FLAG_JUNKERS2)) {
+        EMS_TxTelegram.emsplus = true; // Assuming here that all Junkers use EMS+
+
+        // figure out if we have older or new thermostats
+        // Heating Circuits on 0x65 or 0x79
+        // see https://github.com/proddy/EMS-ESP/issues/335#issuecomment-593324716)
+        if (model == EMS_DEVICE_FLAG_JUNKERS1) {
+            switch (temptype) {
+            case THERMOSTAT_TEMP_MODE_NOFROST:
+                EMS_TxTelegram.offset = EMS_OFFSET_JunkersSetMessage_no_frost_temp;
+                break;
+            case THERMOSTAT_TEMP_MODE_NIGHT:
                 EMS_TxTelegram.offset = EMS_OFFSET_JunkersSetMessage_night_temp;
-            } else if (EMS_Thermostat.hc[hc_num - 1].mode_type == 1) {
+                break;
+            case THERMOSTAT_TEMP_MODE_DAY:
                 EMS_TxTelegram.offset = EMS_OFFSET_JunkersSetMessage_day_temp;
+                break;
+            default:
+            case THERMOSTAT_TEMP_MODE_AUTO: // automatic selection, if no type is defined, we use the standard code
+                EMS_TxTelegram.offset =
+                    (EMS_Thermostat.hc[hc_num - 1].mode_type == 0) ? EMS_OFFSET_JunkersSetMessage_night_temp : EMS_OFFSET_JunkersSetMessage_day_temp;
+                break;
             }
-            break;
+            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage1_HC1 + hc_num - 1; // 0x65
+            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC1 + hc_num - 1;
+        } else {
+            // EMS_DEVICE_FLAG_JUNKERS2
+            switch (temptype) {
+            case THERMOSTAT_TEMP_MODE_NOFROST:
+                EMS_TxTelegram.offset = EMS_OFFSET_JunkersSetMessage2_no_frost_temp;
+                break;
+            case THERMOSTAT_TEMP_MODE_ECO:
+                EMS_TxTelegram.offset = EMS_OFFSET_JunkersSetMessage2_eco_temp;
+                break;
+            default:
+            case THERMOSTAT_TEMP_MODE_HEAT:
+                EMS_TxTelegram.offset = EMS_OFFSET_JunkersSetMessage3_heat;
+                break;
+            }
+            // older junkers models like the FR100
+            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage2_HC1 + hc_num - 1; // 0x79
+            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC1 + hc_num - 1;
         }
 
-        if (hc_num == 1) {
-            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage_HC1;
-            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC1;
-        } else if (hc_num == 2) {
-            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage_HC2;
-            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC2;
-        } else if (hc_num == 3) {
-            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage_HC3;
-            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC3;
-        } else if (hc_num == 4) {
-            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage_HC4;
-            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC4;
-        }
         EMS_TxTelegram.type_validate = EMS_TxTelegram.type;
     }
 
@@ -2517,12 +2537,12 @@ void ems_setThermostatMode(uint8_t mode, uint8_t hc_num) {
         return;
     }
 
-    uint8_t model     = ems_getThermostatModel();
+    uint8_t model     = ems_getThermostatFlags();
     uint8_t device_id = EMS_Thermostat.device_id;
     uint8_t set_mode;
 
     // RC300/1000/3000 have different settings
-    if (model == EMS_DEVICE_FLAG_RC300) {
+    if ((model == EMS_DEVICE_FLAG_RC300) || (model == EMS_DEVICE_FLAG_RC100)) {
         if (mode == 1) {
             set_mode = 0; // manual
         } else {
@@ -2580,24 +2600,20 @@ void ems_setThermostatMode(uint8_t mode, uint8_t hc_num) {
         EMS_TxTelegram.offset        = EMS_OFFSET_RC35Set_mode;
         EMS_TxTelegram.type_validate = EMS_TxTelegram.type;
 
-    } else if (model == EMS_DEVICE_FLAG_JUNKERS) {
-        if (hc_num == 1) {
-            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage_HC1;
-            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC1;
-        } else if (hc_num == 2) {
-            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage_HC2;
-            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC2;
-        } else if (hc_num == 3) {
-            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage_HC3;
-            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC3;
-        } else if (hc_num == 4) {
-            EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage_HC4;
-            EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC4;
-        }
-        EMS_TxTelegram.offset        = EMS_OFFSET_JunkersSetMessage_set_mode;
-        EMS_TxTelegram.type_validate = EMS_TxTelegram.type;
+        // Junkers
+    } else if (model == EMS_DEVICE_FLAG_JUNKERS1) {
+        EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage1_HC1 + hc_num - 1;
+        EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC1;
+        EMS_TxTelegram.offset             = EMS_OFFSET_JunkersSetMessage_set_mode;
+        EMS_TxTelegram.type_validate      = EMS_TxTelegram.type;
+    } else if (model == EMS_DEVICE_FLAG_JUNKERS2) {
+        EMS_TxTelegram.type               = EMS_TYPE_JunkersSetMessage2_HC1 + hc_num - 1;
+        EMS_TxTelegram.comparisonPostRead = EMS_TYPE_JunkersStatusMessage_HC1;
+        EMS_TxTelegram.offset             = EMS_OFFSET_JunkersSetMessage_set_mode;
+        EMS_TxTelegram.type_validate      = EMS_TxTelegram.type;
+    }
 
-    } else if (model == EMS_DEVICE_FLAG_RC300) {
+    else if ((model == EMS_DEVICE_FLAG_RC300) || (model == EMS_DEVICE_FLAG_RC100)) {
         EMS_TxTelegram.offset = EMS_OFFSET_RCPLUSSet_mode;
 
         if (hc_num == 1) {
@@ -2939,7 +2955,7 @@ const _EMS_Type EMS_Types[] = {
     // Easy
     {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_EasyStatusMessage, "EasyStatusMessage", _process_EasyStatusMessage},
 
-    // Nefit 1010, RC300, RC310 (EMS Plus)
+    // Nefit 1010, RC300, RC100, RC310 (EMS Plus)
     {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RCPLUSStatusMessage_HC1, "RCPLUSStatusMessage_HC1", _process_RCPLUSStatusMessage},
     {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RCPLUSStatusMessage_HC2, "RCPLUSStatusMessage_HC2", _process_RCPLUSStatusMessage},
     {EMS_DEVICE_UPDATE_FLAG_THERMOSTAT, EMS_TYPE_RCPLUSStatusMessage_HC3, "RCPLUSStatusMessage_HC3", _process_RCPLUSStatusMessage},
