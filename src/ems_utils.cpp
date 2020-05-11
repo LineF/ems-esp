@@ -40,7 +40,7 @@ char * _bool_to_char(char * s, uint8_t value) {
 // negative values are assumed stored as 1-compliment (https://medium.com/@LeeJulija/how-integers-are-stored-in-memory-using-twos-complement-5ba04d61a56c)
 char * _short_to_char(char * s, int16_t value, uint8_t decimals) {
     // remove errors or invalid values
-    if (value <= EMS_VALUE_SHORT_NOTSET) {
+    if (value == EMS_VALUE_SHORT_NOTSET) {
         strlcpy(s, "?", 10);
         return (s);
     }
@@ -80,7 +80,7 @@ char * _short_to_char(char * s, int16_t value, uint8_t decimals) {
 // decimals: 0 = no division, 1=divide value by 10, 2=divide by 2, 10=divide value by 100
 char * _ushort_to_char(char * s, uint16_t value, uint8_t decimals) {
     // remove errors or invalid values
-    if (value >= EMS_VALUE_USHORT_NOTSET) { // 0x7D00
+    if (value == EMS_VALUE_USHORT_NOTSET) { // 0x7D00
         strlcpy(s, "?", 10);
         return (s);
     }
@@ -201,7 +201,7 @@ void _renderIntValue(const char * prefix, const char * postfix, uint8_t value, u
 }
 
 // takes a long value at prints it to debug log and prints
-void _renderLongValue(const char * prefix, const char * postfix, uint32_t value) {
+void _renderLongValue(const char * prefix, const char * postfix, uint32_t value, uint8_t div) {
     static char buffer[200] = {0};
     strlcpy(buffer, "  ", sizeof(buffer));
     strlcat(buffer, prefix, sizeof(buffer));
@@ -211,7 +211,13 @@ void _renderLongValue(const char * prefix, const char * postfix, uint32_t value)
         strlcat(buffer, "?", sizeof(buffer));
     } else {
         char s[20] = {0};
-        strlcat(buffer, ltoa(value, s, 10), sizeof(buffer));
+        if (div == 0) {
+            strlcat(buffer, ltoa(value, s, 10), sizeof(buffer));
+        } else {
+            strlcat(buffer, ltoa(value / 10, s, 10), sizeof(buffer));
+            strlcat(buffer, ".", sizeof(buffer));
+            strlcat(buffer, ltoa(value % 10, s, 10), sizeof(buffer));
+        }
     }
 
     if (postfix != nullptr) {

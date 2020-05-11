@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.9.5 beta]
+## [1.9.6 beta]
+
+## [1.9.5] 30-04-2020
 
 ### Added
 - Solar Module SM200 support
@@ -24,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added features to WW messages (0x33, 0x34) to improve WW monitoring. (PR#338 by @ypaindaveine)
 - Added mixing log and stub for EMS type 0xAC (PR#338 by @ypaindaveine)
 - Added Thermostat retrieving settings (0xA5) (validated on RC30N) with MQTT support (thanks Yves @ypaindaveine. See #352)
+- Merged with PR https://github.com/proddy/EMS-ESP/pull/366 from @MichaelDvP fixing RC20 and MM50
 
 ### Fixed
 - set boiler warm water temp on Junkers/Bosch HT3
