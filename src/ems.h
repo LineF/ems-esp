@@ -31,8 +31,9 @@
 #define EMS_VALUE_BOOL_OFF 0x00        // boolean false
 #define EMS_VALUE_BOOL_NOTSET 0xFE     // random number that's not 0, 1 or FF
 #define EMS_VALUE_INT_NOTSET 0xFF      // for 8-bit unsigned ints/bytes
-#define EMS_VALUE_SHORT_NOTSET -32000  // was -32768 for 2-byte signed shorts
-#define EMS_VALUE_USHORT_NOTSET 32000  // was 0x8000 for 2-byte unsigned shorts
+#define EMS_VALUE_SHORT_NOTSET -32000  // 0x8300 for 2-byte signed shorts
+#define EMS_VALUE_USHORT_NOTSET 32000  // 0x7D00 (was 0x8000) for 2-byte unsigned shorts
+#define EMS_VALUE_USHORT_NOTVALID 0x8000  // 0x8000 for 2-byte unsigned shorts
 #define EMS_VALUE_LONG_NOTSET 0xFFFFFF // for 3-byte longs
 
 // thermostat specific
@@ -50,7 +51,7 @@
 enum EMS_DEVICE_FLAG_TYPES : uint8_t {
     EMS_DEVICE_FLAG_NONE     = 0,
     EMS_DEVICE_FLAG_MMPLUS   = 20, // mixing EMS+
-    EMS_DEVICE_FLAG_MM10     = 21, // mixing MM10, MM50
+    EMS_DEVICE_FLAG_MM10     = 21, // mixing MM10
     EMS_DEVICE_FLAG_SM10     = 10,
     EMS_DEVICE_FLAG_SM100    = 11, // for SM100 and SM200
     EMS_DEVICE_FLAG_EASY     = 1,
@@ -61,6 +62,7 @@ enum EMS_DEVICE_FLAG_TYPES : uint8_t {
     EMS_DEVICE_FLAG_RC35     = 6,
     EMS_DEVICE_FLAG_RC100    = 7,
     EMS_DEVICE_FLAG_RC300    = 8,
+    EMS_DEVICE_FLAG_RC20N    = 9,
     EMS_DEVICE_FLAG_JUNKERS1 = 31,       // use 0x65 for HC
     EMS_DEVICE_FLAG_JUNKERS2 = 32,       // use 0x79 for HC, older models
     EMS_DEVICE_FLAG_JUNKERS  = (1 << 6), // 6th bit set if its junkers HT3
@@ -294,6 +296,7 @@ typedef struct {
     uint16_t wwStorageTemp2;     // warm water storage temp 2
     uint16_t retTemp;            // Return temperature
     uint8_t  burnGas;            // Gas on/off
+    uint8_t  wWMode;             // warm water mode
     uint8_t  fanWork;            // Fan on/off
     uint8_t  ignWork;            // Ignition on/off
     uint8_t  heatPmp;            // Circulating pump on/off
@@ -399,9 +402,9 @@ typedef struct {
     uint8_t      pump;                   // pump active
     uint8_t      valveStatus;            // valve status (VS2)
     int16_t      setpoint_maxBottomTemp; // setpoint for maximum collector temp
-    uint16_t     EnergyLastHour;
-    uint16_t     EnergyToday;
-    uint16_t     EnergyTotal;
+    uint32_t     EnergyLastHour;
+    uint32_t     EnergyToday;
+    uint32_t     EnergyTotal;
     uint32_t     pumpWorkMin; // Total solar pump operating time
 } _EMS_SolarModule;
 
@@ -484,7 +487,7 @@ typedef enum : uint8_t {
 void    ems_dumpBuffer(const char * prefix, uint8_t * telegram, uint8_t length);
 void    ems_parseTelegram(uint8_t * telegram, uint8_t len);
 void    ems_init();
-void    ems_doReadCommand(uint16_t type, uint8_t dest);
+void    ems_doReadCommand(uint16_t type, uint8_t dest, uint8_t offset = 0);
 void    ems_sendRawTelegram(char * telegram);
 void    ems_printDevices();
 uint8_t ems_printDevices_s(char * buffer, uint16_t len);
