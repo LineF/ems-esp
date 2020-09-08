@@ -88,9 +88,13 @@ void EMSESPShell::display_banner() {
     // load the list of commands
     add_console_commands();
 
-    // turn off watch
+    // turn off watch, unless is test mode
     emsesp::EMSESP::watch_id(WATCH_ID_NONE);
+#if defined(EMSESP_STANDALONE)
+    emsesp::EMSESP::watch(EMSESP::WATCH_ON);
+#else
     emsesp::EMSESP::watch(EMSESP::WATCH_OFF);
+#endif
 }
 
 // pre-loads all the console commands into the MAIN context
@@ -526,6 +530,7 @@ std::string EMSESPStreamConsole::console_name() {
 }
 
 // Start up telnet and logging
+// Log order is off, err, warning, notice, info, debug, trace, all
 void Console::start() {
 // if we've detected a boot into safe mode on ESP8266, start the Serial console too
 // Serial is always on with the ESP32 as it has 2 UARTs
@@ -540,9 +545,14 @@ void Console::start() {
 
 #ifndef ESP8266
 #if defined(EMSESP_DEBUG)
-    shell->log_level(uuid::log::Level::DEBUG); // order is: err, warning, notice, info, debug, trace, all
+    shell->log_level(uuid::log::Level::DEBUG);
 #endif
 #endif
+
+#if defined(EMSESP_FORCE_SERIAL)
+    shell->log_level(uuid::log::Level::DEBUG);
+#endif
+
 
 #if defined(EMSESP_STANDALONE)
     // always start in su/admin mode when running tests
@@ -558,7 +568,7 @@ void Console::start() {
 #endif
 
     // turn watch off in case it was still set in the last session
-    emsesp::EMSESP::watch(EMSESP::WATCH_OFF);
+    // emsesp::EMSESP::watch(EMSESP::WATCH_OFF);
 }
 
 // handles telnet sync and logging to console

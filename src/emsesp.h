@@ -59,7 +59,9 @@ class EMSESP {
     static void start();
     static void loop();
 
-    static void publish_all_values();
+    static void publish_device_values(uint8_t device_type);
+    static void publish_other_values();
+    static void publish_sensor_values(const bool force = false);
 
 #ifdef EMSESP_STANDALONE
     static void run_test(uuid::console::Shell & shell, const std::string & command); // only for testing
@@ -84,7 +86,7 @@ class EMSESP {
     static void send_raw_telegram(const char * data);
     static bool device_exists(const uint8_t device_id);
 
-    static void device_info(const uint8_t unique_id, JsonObject & root);
+    static void device_info_web(const uint8_t unique_id, JsonObject & root);
 
     static uint8_t count_devices(const uint8_t device_type);
 
@@ -191,6 +193,7 @@ class EMSESP {
     static uint16_t watch_id_;
     static uint8_t  watch_;
     static uint16_t read_id_;
+    static uint16_t publish_id_;
     static bool     tap_water_active_;
 
     static uint8_t unique_id_count_;
