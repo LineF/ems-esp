@@ -95,7 +95,7 @@ std::string Telegram::to_string() const {
             data[2] = this->type_id;
             length  = 5;
         }
-    } else if (this->operation == Telegram::Operation::TX_WRITE) {
+    } else {
         data[1] = this->dest;
         if (this->type_id > 0xFF) {
             data[2] = 0xFF;
@@ -106,10 +106,6 @@ std::string Telegram::to_string() const {
             data[2] = this->type_id;
             length  = 4;
         }
-        for (uint8_t i = 0; i < this->message_length; i++) {
-            data[length++] = this->message_data[i];
-        }
-    } else {
         for (uint8_t i = 0; i < this->message_length; i++) {
             data[length++] = this->message_data[i];
         }
@@ -195,7 +191,8 @@ void RxService::add(uint8_t * data, uint8_t length) {
     // if we're watching and "raw" print out actual telegram as bytes to the console
     if (EMSESP::watch() == EMSESP::Watch::WATCH_RAW) {
         uint16_t trace_watch_id = EMSESP::watch_id();
-        if ((trace_watch_id == WATCH_ID_NONE)  || (type_id == trace_watch_id) || ((trace_watch_id < 0x80) && ((src == trace_watch_id) || (dest == trace_watch_id)))) {
+        if ((trace_watch_id == WATCH_ID_NONE) || (type_id == trace_watch_id)
+            || ((trace_watch_id < 0x80) && ((src == trace_watch_id) || (dest == trace_watch_id)))) {
             LOG_NOTICE(F("Rx: %s"), Helpers::data_to_hex(data, length).c_str());
         }
     }
@@ -319,7 +316,7 @@ void TxService::send_telegram(const QueuedTxTelegram & tx_telegram) {
         telegram_raw[2] = 0xFF; // fixed value indicating an extended message
         telegram_raw[3] = telegram->offset;
 
-        // EMS+ has different format for read and write. See https://github.com/proddy/EMS-ESP/wiki/RC3xx-Thermostats
+        // EMS+ has different format for read and write
         if (telegram->operation == Telegram::Operation::TX_WRITE) {
             // WRITE
             telegram_raw[4] = (telegram->type_id >> 8) - 1; // type, 1st byte, high-byte, subtract 0x100
@@ -472,7 +469,9 @@ void TxService::add(uint8_t operation, const uint8_t * data, const uint8_t lengt
             operation = Telegram::Operation::TX_READ;
         } else {
             operation = Telegram::Operation::TX_WRITE;
+            set_post_send_query(type_id);
         }
+        EMSESP::set_read_id(type_id);
     }
 
     auto telegram = std::make_shared<Telegram>(operation, src, dest, type_id, offset, message_data, message_length); // operation is TX_WRITE or TX_READ
@@ -535,7 +534,7 @@ void TxService::send_raw(const char * telegram_data) {
         return; // nothing to send
     }
 
-    add(Telegram::Operation::TX_RAW, data, count + 1); // add to Tx queue
+    add(Telegram::Operation::TX_RAW, data, count + 1, true); // add to front of Tx queue
 }
 
 // add last Tx to tx queue and increment count
@@ -583,7 +582,7 @@ uint16_t TxService::post_send_query() {
     uint16_t post_typeid = this->get_post_send_query();
 
     if (post_typeid) {
-        uint8_t dest            = (this->telegram_last_->dest & 0x7F);
+        uint8_t dest = (this->telegram_last_->dest & 0x7F);
         // when set a value with large offset before and validate on same type, we have to add offset 0, 26, 52, ...
         uint8_t offset          = (this->telegram_last_->type_id == post_typeid) ? ((this->telegram_last_->offset / 26) * 26) : 0;
         uint8_t message_data[1] = {EMS_MAX_TELEGRAM_LENGTH}; // request all data, 32 bytes

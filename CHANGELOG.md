@@ -5,13 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.1] 
+## [2.0.2] 
+
+### Added
+- add boiler heatingactivated, automatic select parameter telegrams for write
+- add boiler wWType
+- support for uploading compressed firmware binaries
+- add wWType to MQTT publish
+- option to set the MQTT retain flag
+
+### Fixed
+- fix wwontime readback
+- fixed support for RC300 via MQTT commands (#505)
+
+### Changed
+- renamed wWCircPumpType to wWChargeType
+- Installation doc moved to wiki
+
+### Removed
+-
+
+
+## [2.0.1] September 13 2020
 
 ### Added
 - Able to set individual MQTT publish intervals per device
+- Option to automatically MQTT publish when device data is updated
 - Immediately send out Rx read request after a successful write, and publish via MQTT
 - Added clearer steps in documentation on how to erase & upload
 - Show Boiler's pump modulation in Web
+- Support parasite Dallas temperature sensors
+- Improvements to `watch` command, including publishing the telegram to MQTT
+- Support for analog measurements on a GPIO (fixed)
+- New `read <device ID> <type ID>` command in console
 
 ### Fixed
 - Sometimes the automatic upgrade from 1.9 to 2.0 bricked the ESP8266
@@ -23,10 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - External Dallas sensor support for DS18S20
 
 ### Changed
-- Web user-interface improvements
-- Spelling of disinfection in MQTT
+- Web user-interface improvements, table alignment and number formatting
+- Spelling of disinfection in MQTT payload
 - Many small minor code improvements and optimizations
 - External dallas temperature sensors rounded to a single decimal point
+- Syslog hostname always shown in Web
 
 ### Removed
 - NO_LED build option

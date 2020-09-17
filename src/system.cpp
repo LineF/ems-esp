@@ -237,7 +237,7 @@ void System::send_heartbeat() {
     doc["rxfails"]          = EMSESP::rxservice_.telegram_error_count();
     doc["adc"]              = analog_; //analogRead(A0);
 
-    Mqtt::publish("heartbeat", doc, false); // send to MQTT with retain off. This will add to MQTT queue.
+    Mqtt::publish_retain(F("heartbeat"), doc, false); // send to MQTT with retain off. This will add to MQTT queue.
 }
 
 // measure and moving average adc
@@ -250,6 +250,8 @@ void System::measure_analog() {
         uint16_t a = analogRead(A0);
 #elif defined(ESP32)
         uint16_t a = analogRead(36);
+#else
+        uint16_t a = 0; // standalone
 #endif
         static uint32_t sum_ = 0;
 
@@ -631,7 +633,6 @@ bool System::check_upgrade() {
 #if defined(EMSESP_DEBUG)
         Serial.begin(115200);
         Serial.println(F("FS is Littlefs"));
-        Serial.flush();
         Serial.end();
 #endif
         return false;
@@ -647,9 +648,11 @@ bool System::check_upgrade() {
 #if defined(EMSESP_DEBUG)
         Serial.begin(115200);
         Serial.println(F("No old SPIFFS found!"));
-        Serial.flush();
         Serial.end();
 #endif
+        // if there is neither SPIFFS or LittleFS we can assume the ESP8266 has been erased
+        l_cfg.setAutoFormat(true); // reset to normal behaviour
+        LittleFS.setConfig(l_cfg);
         return false;
     }
 
@@ -723,6 +726,7 @@ bool System::check_upgrade() {
                     mqttSettings.host             = mqtt["ip"] | FACTORY_MQTT_HOST;
                     mqttSettings.mqtt_format      = (mqtt["nestedjson"] ? MQTT_format::NESTED : MQTT_format::SINGLE);
                     mqttSettings.mqtt_qos         = mqtt["qos"] | 0;
+                    mqttSettings.mqtt_retain      = mqtt["retain"];
                     mqttSettings.username         = mqtt["user"] | "";
                     mqttSettings.password         = mqtt["password"] | "";
                     mqttSettings.port             = mqtt["port"] | FACTORY_MQTT_PORT;
@@ -781,6 +785,9 @@ bool System::check_upgrade() {
                     settings.syslog_host          = EMSESP_DEFAULT_SYSLOG_HOST;
                     settings.syslog_level         = EMSESP_DEFAULT_SYSLOG_LEVEL;
                     settings.syslog_mark_interval = EMSESP_DEFAULT_SYSLOG_MARK_INTERVAL;
+                    settings.dallas_gpio          = custom_settings["dallas_gpio"] | EMSESP_DEFAULT_DALLAS_GPIO;
+                    settings.dallas_parasite      = custom_settings["dallas_parasite"] | EMSESP_DEFAULT_DALLAS_PARASITE;
+                    settings.led_gpio             = custom_settings["led_gpio"] | EMSESP_DEFAULT_LED_GPIO;
 
                     return StateUpdateResult::CHANGED;
                 },

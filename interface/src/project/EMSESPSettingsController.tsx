@@ -1,4 +1,4 @@
-import React, { Component, Fragment } from 'react';
+import React, { Component } from 'react';
 import { ValidatorForm, TextValidator, SelectValidator } from 'react-material-ui-form-validator';
 
 import { Checkbox, Typography, Box, Link } from '@material-ui/core';
@@ -8,7 +8,7 @@ import MenuItem from '@material-ui/core/MenuItem';
 import { ENDPOINT_ROOT } from '../api';
 import { restController, RestControllerProps, RestFormLoader, RestFormProps, FormActions, FormButton, BlockFormControlLabel, SectionContent } from '../components';
 
-import { isIP, isHostname, or } from '../validators';
+import { isIP, isHostname, or, optional } from '../validators';
 
 import { EMSESPSettings } from './EMSESPtypes';
 
@@ -19,7 +19,7 @@ type EMSESPSettingsControllerProps = RestControllerProps<EMSESPSettings>;
 class EMSESPSettingsController extends Component<EMSESPSettingsControllerProps> {
 
     componentDidMount() {
-        ValidatorForm.addValidationRule('isIPOrHostname', or(isIP, isHostname));
+        ValidatorForm.addValidationRule('isIPOrHostname', optional(or(isIP, isHostname)));
         this.props.loadData();
     }
 
@@ -48,14 +48,18 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
         <ValidatorForm onSubmit={saveData}>
             <Box bgcolor="info.main" p={2} mt={2} mb={2}>
                 <Typography variant="body1">
-                    Customize EMS-ESP by editing the default settings here. Refer to the <Link href="https://emsesp.github.io/docs/#/" color="primary">{'Wiki'}</Link>&nbsp;for descriptions of each setting.
+                    Customize EMS-ESP by modifying the default settings here. Refer to the <Link href="https://emsesp.github.io/docs/#/Configure-firmware" color="primary">{'Wiki'}</Link>&nbsp;for descriptions of each setting.
                 </Typography>
             </Box>
+            <br></br>
+            <Typography variant="h6" color="primary" >
+                EMS Bus
+            </Typography>
             <TextValidator
                 validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:255']}
                 errorMessages={['TX mode is required', "Must be a number", "Must be 0 or higher", "Max value is 255"]}
                 name="tx_mode"
-                label="Tx Mode (0=off, 1=EMS1.0, 2=EMS+, 3=HT3)"
+                label="Tx Mode (0=off)"
                 fullWidth
                 variant="outlined"
                 value={data.tx_mode}
@@ -100,6 +104,10 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
                 onChange={handleValueChange('tx_gpio')}
                 margin="normal"
             />
+            <br></br>
+            <Typography variant="h6" color="primary" >
+                Dallas Sensor
+            </Typography>
             <TextValidator
                 validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:40']}
                 errorMessages={['Dallas GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 255"]}
@@ -112,6 +120,20 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
                 onChange={handleValueChange('dallas_gpio')}
                 margin="normal"
             />
+            <BlockFormControlLabel
+                control={
+                    <Checkbox
+                        checked={data.dallas_parasite}
+                        onChange={handleValueChange('dallas_parasite')}
+                        value="dallas_parasite"
+                    />
+                }
+                label="Dallas Parasite Mode"
+            />
+            <br></br>
+            <Typography variant="h6" color="primary" >
+                LED
+            </Typography>
             <TextValidator
                 validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:40']}
                 errorMessages={['LED GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 255"]}
@@ -134,6 +156,10 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
                 }
                 label="Invert/Hide LED"
             />
+            <br></br>
+            <Typography variant="h6" color="primary" >
+                Shower
+            </Typography>
             <BlockFormControlLabel
                 control={
                     <Checkbox
@@ -154,6 +180,21 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
                 }
                 label="Shower Alert"
             />
+            <br></br>
+            <Typography variant="h6" color="primary" >
+                Syslog
+            </Typography>
+            <TextValidator
+                validators={['isIPOrHostname']}
+                errorMessages={["Not a valid IP address or hostname"]}
+                name="syslog_host"
+                label="Syslog IP/Host (optional)"
+                fullWidth
+                variant="outlined"
+                value={data.syslog_host}
+                onChange={handleValueChange('syslog_host')}
+                margin="normal"
+            />
             <SelectValidator name="syslog_level"
                 label="Syslog Log Level"
                 value={data.syslog_level}
@@ -166,33 +207,18 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
                 <MenuItem value={6}>INFO</MenuItem>
                 <MenuItem value={7}>DEBUG</MenuItem>
             </SelectValidator>
-            {data.syslog_level !== -1 &&
-                <Fragment>
-                    <TextValidator
-                        validators={['isIPOrHostname']}
-                        errorMessages={["Not a valid IP address or hostname"]}
-                        name="syslog_host"
-                        label="Syslog IP/Host"
-                        fullWidth
-                        variant="outlined"
-                        value={data.syslog_host}
-                        onChange={handleValueChange('syslog_host')}
-                        margin="normal"
-                    />
-                    <TextValidator
-                        validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:65535']}
-                        errorMessages={['Syslog Mark is required', "Must be a number", "Must be 0 or higher (0=off)", "Max value is 65535"]}
-                        name="syslog_mark_interval"
-                        label="Syslog Mark Interval (seconds, 0=off)"
-                        fullWidth
-                        variant="outlined"
-                        value={data.syslog_mark_interval}
-                        type="number"
-                        onChange={handleValueChange('syslog_mark_interval')}
-                        margin="normal"
-                    />
-                </Fragment>
-            }
+            <TextValidator
+                validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:65535']}
+                errorMessages={['Syslog Mark is required', "Must be a number", "Must be 0 or higher (0=off)", "Max value is 65535"]}
+                name="syslog_mark_interval"
+                label="Syslog Mark Interval (seconds, 0=off)"
+                fullWidth
+                variant="outlined"
+                value={data.syslog_mark_interval}
+                type="number"
+                onChange={handleValueChange('syslog_mark_interval')}
+                margin="normal"
+            />
             <FormActions>
                 <FormButton startIcon={<SaveIcon />} variant="contained" color="primary" type="submit">
                     Save

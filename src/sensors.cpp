@@ -49,7 +49,10 @@ void Sensors::reload() {
         mqtt_format_ = settings.mqtt_format; // single, nested or ha
     });
 
-    EMSESP::emsespSettingsService.read([&](EMSESPSettings & settings) { dallas_gpio_ = settings.dallas_gpio; });
+    EMSESP::emsespSettingsService.read([&](EMSESPSettings & settings) {
+        dallas_gpio_ = settings.dallas_gpio;
+        parasite_    = settings.dallas_parasite;
+    });
 
     if (mqtt_format_ == MQTT_format::HA) {
         for (uint8_t i = 0; i < MAX_SENSORS; registered_ha_[i++] = false)
@@ -64,10 +67,10 @@ void Sensors::loop() {
     if (state_ == State::IDLE) {
         if (time_now - last_activity_ >= READ_INTERVAL_MS) {
             // LOG_DEBUG(F("Read sensor temperature")); // uncomment for debug
-            if (bus_.reset()) {
+            if (bus_.reset() || parasite_) {
                 YIELD;
                 bus_.skip();
-                bus_.write(CMD_CONVERT_TEMP);
+                bus_.write(CMD_CONVERT_TEMP, parasite_ ? 1 : 0);
                 state_ = State::READING;
             } else {
                 // no sensors found
@@ -94,16 +97,21 @@ void Sensors::loop() {
             uint8_t addr[ADDR_LEN] = {0};
 
             if (bus_.search(addr)) {
-                bus_.depower();
-
+                if (!parasite_) {
+                    bus_.depower();
+                }
                 if (bus_.crc8(addr, ADDR_LEN - 1) == addr[ADDR_LEN - 1]) {
                     switch (addr[0]) {
                     case TYPE_DS18B20:
                     case TYPE_DS18S20:
                     case TYPE_DS1822:
                     case TYPE_DS1825:
-                        found_.emplace_back(addr);
-                        found_.back().temperature_c = get_temperature_c(addr);
+                        float f;
+                        f = get_temperature_c(addr);
+                        if ((f != NAN) && (f >= -55) && (f <= 125)) {
+                            found_.emplace_back(addr);
+                            found_.back().temperature_c = f;
+                        }
 
                         /*
                         // comment out for debugging
@@ -122,7 +130,9 @@ void Sensors::loop() {
                     LOG_ERROR(F("Invalid sensor %s"), Device(addr).to_string().c_str());
                 }
             } else {
-                bus_.depower();
+                if (!parasite_) {
+                    bus_.depower();
+                }
                 if ((found_.size() >= devices_.size()) || (retrycnt_ > 5)) {
                     if (found_.size() == devices_.size()) {
                         for (uint8_t i = 0; i < devices_.size(); i++) {
@@ -149,9 +159,12 @@ void Sensors::loop() {
 
 bool Sensors::temperature_convert_complete() {
 #ifndef EMSESP_STANDALONE
+    if (parasite_) {
+        return true; // don't care, use the minimum time in loop
+    }
     return bus_.read_bit() == 1;
 #else
-    return 1;
+    return true;
 #endif
 }
 
@@ -211,7 +224,7 @@ float Sensors::get_temperature_c(const uint8_t addr[]) {
             break;
         }
     }
-    uint32_t raw = (raw_value * 625 + 500) / 1000; // round to 0.1
+    uint32_t raw = ((uint32_t)raw_value * 625 + 500) / 1000; // round to 0.1
     return (float)raw / 10;
 #else
     return NAN;
@@ -329,7 +342,7 @@ void Sensors::publish_values() {
                 config["uniq_id"] = str;
 
                 snprintf_P(&topic[0], 50, PSTR("homeassistant/sensor/ems-esp/sensor%d/config"), i);
-                Mqtt::publish(topic, config, false); // publish the config payload with no retain flag
+                Mqtt::publish_retain(topic, config, false); // publish the config payload with no retain flag
 
                 registered_ha_[i] = true;
             }
@@ -338,9 +351,9 @@ void Sensors::publish_values() {
     }
 
     if ((mqtt_format_ == MQTT_format::NESTED) || (mqtt_format_ == MQTT_format::CUSTOM)) {
-        Mqtt::publish("sensors", doc);
+        Mqtt::publish(F("sensors"), doc);
     } else if (mqtt_format_ == MQTT_format::HA) {
-        Mqtt::publish("homeassistant/sensor/ems-esp/state", doc);
+        Mqtt::publish(F("homeassistant/sensor/ems-esp/state"), doc);
     }
 }
 } // namespace emsesp
