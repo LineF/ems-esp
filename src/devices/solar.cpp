@@ -47,10 +47,15 @@ Solar::Solar(uint8_t device_type, uint8_t device_id, uint8_t product_id, const s
         register_telegram_type(0x0103, F("ISM1StatusMessage"), true, [&](std::shared_ptr<const Telegram> t) { process_ISM1StatusMessage(t); });
         register_telegram_type(0x0101, F("ISM1Set"), false, [&](std::shared_ptr<const Telegram> t) { process_ISM1Set(t); });
     }
+
+    // API call
+    Command::add_with_json(this->device_type(), F("info"), [&](const char * value, const int8_t id, JsonObject & object) {
+        return command_info(value, id, object);
+    });
 }
 
-// context submenu
-void Solar::add_context_menu() {
+bool Solar::command_info(const char * value, const int8_t id, JsonObject & output) {
+    return (export_values(output));
 }
 
 // print to web
@@ -109,69 +114,99 @@ void Solar::show_values(uuid::console::Shell & shell) {
 // publish values via MQTT
 void Solar::publish_values() {
     StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> doc;
+    JsonObject                                      output = doc.to<JsonObject>();
+    if (export_values(output)) {
+        Mqtt::publish(F("solar_data"), doc.as<JsonObject>());
+    }
 
+    // if we're using Home Assistant and haven't created the MQTT Discovery topics, do it now
+    if ((Mqtt::mqtt_format() == Mqtt::Format::HA) && (!ha_created_)) {
+        register_mqtt_ha_config();
+    }
+}
+
+// publish config topic for HA MQTT Discovery
+void Solar::register_mqtt_ha_config() {
+    Mqtt::register_mqtt_ha_sensor(F("Collector temperature (TS1)"), this->device_type(), "collectorTemp", "°C", "");
+    Mqtt::register_mqtt_ha_sensor(F("Bottom temperature (TS2)"), this->device_type(), "tankBottomTemp", "°C", "");
+    Mqtt::register_mqtt_ha_sensor(F("Bottom temperature (TS5)"), this->device_type(), "tankBottomTemp2", "°C", "");
+    Mqtt::register_mqtt_ha_sensor(F("Heat exchanger temperature (TS6)"), this->device_type(), "heatExchangerTemp", "°C", "");
+    Mqtt::register_mqtt_ha_sensor(F("Solar pump modulation (PS1)"), this->device_type(), "solarPumpModulation", "%", "");
+    Mqtt::register_mqtt_ha_sensor(F("Cylinder pump modulation (PS5)"), this->device_type(), "cylinderPumpModulation", "%", "");
+    Mqtt::register_mqtt_ha_sensor(F("Pump working time"), this->device_type(), "pumpWorkMin", "", "");
+    Mqtt::register_mqtt_ha_sensor(F("Energy last hour"), this->device_type(), "energyLastHour", "", "");
+    Mqtt::register_mqtt_ha_sensor(F("Energy today"), this->device_type(), "energyToday", "", "");
+    Mqtt::register_mqtt_ha_sensor(F("Energy total"), this->device_type(), "energyTotal", "", "");
+    Mqtt::register_mqtt_ha_sensor(F("Solar Pump (PS1) active"), this->device_type(), "solarPump", "", "");
+    Mqtt::register_mqtt_ha_sensor(F("Valve (VS2) status"), this->device_type(), "valveStatus", "", "");
+    Mqtt::register_mqtt_ha_sensor(F("Tank Heated"), this->device_type(), "tankHeated", "", "");
+    Mqtt::register_mqtt_ha_sensor(F("Collector shutdown"), this->device_type(), "collectorShutdown", "", "");
+
+    ha_created_ = true;
+}
+
+// creates JSON doc from values
+// returns false if empty
+bool Solar::export_values(JsonObject & output) {
     char s[10]; // for formatting strings
 
     if (Helpers::hasValue(collectorTemp_)) {
-        doc["collectorTemp"] = (float)collectorTemp_ / 10;
+        output["collectorTemp"] = (float)collectorTemp_ / 10;
     }
 
     if (Helpers::hasValue(tankBottomTemp_)) {
-        doc["tankBottomTemp"] = (float)tankBottomTemp_ / 10;
+        output["tankBottomTemp"] = (float)tankBottomTemp_ / 10;
     }
 
     if (Helpers::hasValue(tankBottomTemp2_)) {
-        doc["tankBottomTemp2"] = (float)tankBottomTemp2_ / 10;
+        output["tankBottomTemp2"] = (float)tankBottomTemp2_ / 10;
     }
 
     if (Helpers::hasValue(heatExchangerTemp_)) {
-        doc["heatExchangerTemp"] = (float)heatExchangerTemp_ / 10;
+        output["heatExchangerTemp"] = (float)heatExchangerTemp_ / 10;
     }
 
     if (Helpers::hasValue(solarPumpModulation_)) {
-        doc["solarPumpModulation"] = solarPumpModulation_;
+        output["solarPumpModulation"] = solarPumpModulation_;
     }
 
     if (Helpers::hasValue(cylinderPumpModulation_)) {
-        doc["cylinderPumpModulation"] = cylinderPumpModulation_;
+        output["cylinderPumpModulation"] = cylinderPumpModulation_;
     }
 
     if (Helpers::hasValue(solarPump_, EMS_VALUE_BOOL)) {
-        doc["solarPump"] = Helpers::render_value(s, solarPump_, EMS_VALUE_BOOL);
+        output["solarPump"] = Helpers::render_value(s, solarPump_, EMS_VALUE_BOOL);
     }
 
     if (Helpers::hasValue(valveStatus_, EMS_VALUE_BOOL)) {
-        doc["valveStatus"] = Helpers::render_value(s, valveStatus_, EMS_VALUE_BOOL);
+        output["valveStatus"] = Helpers::render_value(s, valveStatus_, EMS_VALUE_BOOL);
     }
 
     if (Helpers::hasValue(pumpWorkMin_)) {
-        doc["pumpWorkMin"] = pumpWorkMin_;
+        output["pumpWorkMin"] = pumpWorkMin_;
     }
 
     if (Helpers::hasValue(tankHeated_, EMS_VALUE_BOOL)) {
-        doc["tankHeated"] = Helpers::render_value(s, tankHeated_, EMS_VALUE_BOOL);
+        output["tankHeated"] = Helpers::render_value(s, tankHeated_, EMS_VALUE_BOOL);
     }
 
     if (Helpers::hasValue(collectorShutdown_, EMS_VALUE_BOOL)) {
-        doc["collectorShutdown"] = Helpers::render_value(s, collectorShutdown_, EMS_VALUE_BOOL);
+        output["collectorShutdown"] = Helpers::render_value(s, collectorShutdown_, EMS_VALUE_BOOL);
     }
 
     if (Helpers::hasValue(energyLastHour_)) {
-        doc["energyLastHour"] = (float)energyLastHour_ / 10;
+        output["energyLastHour"] = (float)energyLastHour_ / 10;
     }
 
     if (Helpers::hasValue(energyToday_)) {
-        doc["energyToday"] = energyToday_;
+        output["energyToday"] = energyToday_;
     }
 
     if (Helpers::hasValue(energyTotal_)) {
-        doc["energyTotal"] = (float)energyTotal_ / 10;
+        output["energyTotal"] = (float)energyTotal_ / 10;
     }
 
-    // if we have data, publish it
-    if (!doc.isNull()) {
-        Mqtt::publish(F("sm_data"), doc);
-    }
+    return output.size();
 }
 
 // check to see if values have been updated
@@ -181,10 +216,6 @@ bool Solar::updated_values() {
         return true;
     }
     return false;
-}
-
-// add console commands
-void Solar::console_commands() {
 }
 
 // SM10Monitor - type 0x97

@@ -42,6 +42,8 @@ void EMSESPSettings::read(EMSESPSettings & settings, JsonObject & root) {
     root["dallas_parasite"]      = settings.dallas_parasite;
     root["led_gpio"]             = settings.led_gpio;
     root["hide_led"]             = settings.hide_led;
+    root["api_enabled"]          = settings.api_enabled;
+    root["bool_format"]          = settings.bool_format;
 }
 
 StateUpdateResult EMSESPSettings::update(JsonObject & root, EMSESPSettings & settings) {
@@ -59,6 +61,8 @@ StateUpdateResult EMSESPSettings::update(JsonObject & root, EMSESPSettings & set
     settings.dallas_parasite      = root["dallas_parasite"] | EMSESP_DEFAULT_DALLAS_PARASITE;
     settings.led_gpio             = root["led_gpio"] | EMSESP_DEFAULT_LED_GPIO;
     settings.hide_led             = root["hide_led"] | EMSESP_DEFAULT_HIDE_LED;
+    settings.api_enabled          = root["api_enabled"] | EMSESP_DEFAULT_API_ENABLED;
+    settings.bool_format          = root["bool_format"] | EMSESP_DEFAULT_BOOL_FORMAT;
 
     return StateUpdateResult::CHANGED;
 }
@@ -67,11 +71,10 @@ StateUpdateResult EMSESPSettings::update(JsonObject & root, EMSESPSettings & set
 // either via the Web UI or via the Console
 void EMSESPSettingsService::onUpdate() {
     EMSESP::shower_.start();
-    // EMSESP::system_.syslog_init(); // changing SysLog will require a restart
-    EMSESP::init_tx();
-    System::set_led();
-    Sensors sensors_; // Dallas sensors
-    sensors_.start();
+    Sensor sensor_; // Dallas sensors
+    sensor_.start();
+
+    System::init();
 }
 
 void EMSESPSettingsService::begin() {

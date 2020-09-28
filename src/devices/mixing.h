@@ -25,6 +25,7 @@
 #include <uuid/log.h>
 
 #include "emsdevice.h"
+#include "emsesp.h"
 #include "telegram.h"
 #include "helpers.h"
 #include "mqtt.h"
@@ -39,12 +40,13 @@ class Mixing : public EMSdevice {
     virtual void publish_values();
     virtual void device_info_web(JsonArray & root);
     virtual bool updated_values();
-    virtual void add_context_menu();
 
   private:
     static uuid::log::Logger logger_;
 
-    void console_commands();
+    bool export_values(JsonObject & doc);
+    void register_mqtt_ha_config();
+    bool command_info(const char * value, const int8_t id, JsonObject & output);
 
     void process_MMPLUSStatusMessage_HC(std::shared_ptr<const Telegram> telegram);
     void process_MMPLUSStatusMessage_WWC(std::shared_ptr<const Telegram> telegram);
@@ -59,6 +61,14 @@ class Mixing : public EMSdevice {
         WWC // warm water circuit
     };
 
+    Type type() const {
+        return type_;
+    }
+
+    void type(Type new_type) {
+        type_ = new_type;
+    }
+
   private:
     uint16_t hc_          = EMS_VALUE_USHORT_NOTSET;
     uint16_t flowTemp_    = EMS_VALUE_USHORT_NOTSET;
@@ -66,7 +76,9 @@ class Mixing : public EMSdevice {
     int8_t   status_      = EMS_VALUE_UINT_NOTSET;
     uint8_t  flowSetTemp_ = EMS_VALUE_UINT_NOTSET;
     Type     type_        = Type::NONE;
-    bool     changed_     = false;
+
+    bool changed_    = false;
+    bool ha_created_ = false; // for HA MQTT Discovery
 };
 
 } // namespace emsesp

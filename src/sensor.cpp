@@ -18,7 +18,7 @@
 
 // code originally written by nomis - https://github.com/nomis
 
-#include "sensors.h"
+#include "sensor.h"
 #include "emsesp.h"
 
 #ifdef ESP32
@@ -29,10 +29,10 @@
 
 namespace emsesp {
 
-uuid::log::Logger Sensors::logger_{F_(sensors), uuid::log::Facility::DAEMON};
+uuid::log::Logger Sensor::logger_{F_(sensor), uuid::log::Facility::DAEMON};
 
 // start the 1-wire
-void Sensors::start() {
+void Sensor::start() {
     reload();
 
 #ifndef EMSESP_STANDALONE
@@ -40,27 +40,27 @@ void Sensors::start() {
         bus_.begin(dallas_gpio_);
     }
 #endif
+
+    // API call
+    Command::add_with_json(EMSdevice::DeviceType::SENSOR, F("info"), [&](const char * value, const int8_t id, JsonObject & object) {
+        return command_info(value, id, object);
+    });
 }
 
 // load the MQTT settings
-void Sensors::reload() {
-    // copy over values from MQTT so we don't keep on quering the filesystem
-    EMSESP::esp8266React.getMqttSettingsService()->read([&](MqttSettings & settings) {
-        mqtt_format_ = settings.mqtt_format; // single, nested or ha
-    });
-
+void Sensor::reload() {
     EMSESP::emsespSettingsService.read([&](EMSESPSettings & settings) {
         dallas_gpio_ = settings.dallas_gpio;
         parasite_    = settings.dallas_parasite;
     });
 
-    if (mqtt_format_ == MQTT_format::HA) {
+    if (Mqtt::mqtt_format() == Mqtt::Format::HA) {
         for (uint8_t i = 0; i < MAX_SENSORS; registered_ha_[i++] = false)
             ;
     }
 }
 
-void Sensors::loop() {
+void Sensor::loop() {
 #ifndef EMSESP_STANDALONE
     uint32_t time_now = uuid::get_uptime();
 
@@ -157,7 +157,7 @@ void Sensors::loop() {
 #endif
 }
 
-bool Sensors::temperature_convert_complete() {
+bool Sensor::temperature_convert_complete() {
 #ifndef EMSESP_STANDALONE
     if (parasite_) {
         return true; // don't care, use the minimum time in loop
@@ -171,7 +171,7 @@ bool Sensors::temperature_convert_complete() {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
-float Sensors::get_temperature_c(const uint8_t addr[]) {
+float Sensor::get_temperature_c(const uint8_t addr[]) {
 #ifndef EMSESP_STANDALONE
     if (!bus_.reset()) {
         LOG_ERROR(F("Bus reset failed before reading scratchpad from %s"), Device(addr).to_string().c_str());
@@ -233,20 +233,20 @@ float Sensors::get_temperature_c(const uint8_t addr[]) {
 
 #pragma GCC diagnostic pop
 
-const std::vector<Sensors::Device> Sensors::devices() const {
+const std::vector<Sensor::Device> Sensor::devices() const {
     return devices_;
 }
 
-Sensors::Device::Device(const uint8_t addr[])
+Sensor::Device::Device(const uint8_t addr[])
     : id_(((uint64_t)addr[0] << 56) | ((uint64_t)addr[1] << 48) | ((uint64_t)addr[2] << 40) | ((uint64_t)addr[3] << 32) | ((uint64_t)addr[4] << 24)
           | ((uint64_t)addr[5] << 16) | ((uint64_t)addr[6] << 8) | (uint64_t)addr[7]) {
 }
 
-uint64_t Sensors::Device::id() const {
+uint64_t Sensor::Device::id() const {
     return id_;
 }
 
-std::string Sensors::Device::to_string() const {
+std::string Sensor::Device::to_string() const {
     std::string str(20, '\0');
     snprintf_P(&str[0],
                str.capacity() + 1,
@@ -260,7 +260,7 @@ std::string Sensors::Device::to_string() const {
 }
 
 // check to see if values have been updated
-bool Sensors::updated_values() {
+bool Sensor::updated_values() {
     if (changed_) {
         changed_ = false;
         return true;
@@ -268,27 +268,53 @@ bool Sensors::updated_values() {
     return false;
 }
 
+bool Sensor::command_info(const char * value, const int8_t id, JsonObject & output) {
+    return (export_values(output));
+}
+
+// creates JSON doc from values
+// returns false if empty
+// e.g. sensor_data = {"sensor1":{"id":"28-EA41-9497-0E03-5F","temp":"23.30"},"sensor2":{"id":"28-233D-9497-0C03-8B","temp":"24.0"}}
+bool Sensor::export_values(JsonObject & output) {
+    if (devices_.size() == 0) {
+        return false;
+    }
+    uint8_t i = 1; // sensor count
+    for (const auto & device : devices_) {
+        char s[7];
+        char sensorID[20]; // sensor{1-n}
+        strlcpy(sensorID, "sensor", 20);
+        strlcat(sensorID, Helpers::itoa(s, i), 20);
+        JsonObject dataSensor = output.createNestedObject(sensorID);
+        dataSensor["id"]      = device.to_string();
+        dataSensor["temp"]    = Helpers::render_value(s, device.temperature_c, 1);
+        i++;
+    }
+
+    return true;
+}
+
 // send all dallas sensor values as a JSON package to MQTT
 // assumes there are devices
-void Sensors::publish_values() {
+void Sensor::publish_values() {
     uint8_t num_devices = devices_.size();
 
     if (num_devices == 0) {
         return;
     }
 
-    // if we're not using nested JSON, send each sensor out seperately
-    // sensor1, sensor2 etc...
-    // e.g. sensor_1 = {"temp":20.2}
-    if (mqtt_format_ == MQTT_format::SINGLE) {
+    uint8_t mqtt_format_ = Mqtt::mqtt_format();
+
+    // single mode as e.g. ems-esp/sensor_28-EA41-9497-0E03-5F = {"temp":20.2}
+    if (mqtt_format_ == Mqtt::Format::SINGLE) {
         StaticJsonDocument<100> doc;
         for (const auto & device : devices_) {
-            char s[7]; // sensorrange -55.00 to 125.00
-            doc["temp"] = Helpers::render_value(s, device.temperature_c, 1);
-            char topic[60];                // sensors{1-n}
-            strlcpy(topic, "sensor_", 50); // create topic, e.g. home/ems-esp/sensor_28-EA41-9497-0E03-5F
+            char topic[60];
+            strlcpy(topic, "sensor_", 50);
             strlcat(topic, device.to_string().c_str(), 60);
-            Mqtt::publish(topic, doc);
+            char s[7]; // to support -55.00 to 125.00
+            doc["temp"] = Helpers::render_value(s, device.temperature_c, 1);
+            Mqtt::publish(topic, doc.as<JsonObject>());
             doc.clear(); // clear json doc so we can reuse the buffer again
         }
         return;
@@ -299,50 +325,46 @@ void Sensors::publish_values() {
     for (const auto & device : devices_) {
         char s[7];
 
-        if (mqtt_format_ == MQTT_format::CUSTOM) {
-            // e.g. sensors = {28-EA41-9497-0E03-5F":23.30,"28-233D-9497-0C03-8B":24.0}
+        if (mqtt_format_ == Mqtt::Format::CUSTOM) {
+            // e.g. sensor_data = {28-EA41-9497-0E03-5F":23.30,"28-233D-9497-0C03-8B":24.0}
             doc[device.to_string()] = Helpers::render_value(s, device.temperature_c, 1);
-        } else if ((mqtt_format_ == MQTT_format::NESTED) || (mqtt_format_ == MQTT_format::HA)) {
-            // e.g. sensors = {"sensor1":{"id":"28-EA41-9497-0E03-5F","temp":"23.30"},"sensor2":{"id":"28-233D-9497-0C03-8B","temp":"24.0"}}
-            char sensorID[10]; // sensor{1-n}
-            strlcpy(sensorID, "sensor", 10);
-            strlcat(sensorID, Helpers::itoa(s, i), 10);
+        } else if ((mqtt_format_ == Mqtt::Format::NESTED) || (mqtt_format_ == Mqtt::Format::HA)) {
+            // e.g. sensor_data = {"sensor1":{"id":"28-EA41-9497-0E03-5F","temp":"23.30"},"sensor2":{"id":"28-233D-9497-0C03-8B","temp":"24.0"}}
+            char sensorID[20]; // sensor{1-n}
+            strlcpy(sensorID, "sensor", 20);
+            strlcat(sensorID, Helpers::itoa(s, i), 20);
             JsonObject dataSensor = doc.createNestedObject(sensorID);
             dataSensor["id"]      = device.to_string();
             dataSensor["temp"]    = Helpers::render_value(s, device.temperature_c, 1);
         }
 
         // special for HA
-        if (mqtt_format_ == MQTT_format::HA) {
+        if (mqtt_format_ == Mqtt::Format::HA) {
             std::string topic(100, '\0');
-
             // create the config if this hasn't already been done
-            /* e.g.
-            {
-            "dev_cla": "temperature",
-            "stat_t": "homeassistant/sensor/ems-esp/state",
-            "unit_of_meas": "°C",
-            "val_tpl": "{{value_json.sensor2.temp}}",
-            "name": "ems-esp-sensor2",
-            "uniq_id": "ems-esp-sensor2"
-            }
-            */
+            // to e.g. homeassistant/sensor/ems-esp/dallas_sensor1/config
             if (!(registered_ha_[i])) {
                 StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> config;
-                config["dev_cla"]      = "temperature";
-                config["stat_t"]       = "homeassistant/sensor/ems-esp/state";
-                config["unit_of_meas"] = "°C";
+                config["dev_cla"]      = F("temperature");
+                config["stat_t"]       = F("ems-esp/sensor_data");
+                config["unit_of_meas"] = F("°C");
 
                 std::string str(50, '\0');
                 snprintf_P(&str[0], 50, PSTR("{{value_json.sensor%d.temp}}"), i);
                 config["val_tpl"] = str;
 
-                snprintf_P(&str[0], 50, PSTR("ems-esp-sensor%d"), i);
-                config["name"]    = str;
+                snprintf_P(&str[0], 50, PSTR("Dallas sensor%d"), i);
+                config["name"] = str;
+
+                snprintf_P(&str[0], 50, PSTR("dalas_sensor%d"), i);
                 config["uniq_id"] = str;
 
-                snprintf_P(&topic[0], 50, PSTR("homeassistant/sensor/ems-esp/sensor%d/config"), i);
-                Mqtt::publish_retain(topic, config, false); // publish the config payload with no retain flag
+                JsonObject dev = config.createNestedObject("dev");
+                JsonArray  ids = dev.createNestedArray("ids");
+                ids.add("ems-esp");
+
+                snprintf_P(&topic[0], 60, PSTR("homeassistant/sensor/ems-esp/dallas_sensor%d/config"), i);
+                Mqtt::publish_retain(topic, config.as<JsonObject>(), false); // publish the config payload with no retain flag
 
                 registered_ha_[i] = true;
             }
@@ -350,10 +372,9 @@ void Sensors::publish_values() {
         i++; // increment sensor count
     }
 
-    if ((mqtt_format_ == MQTT_format::NESTED) || (mqtt_format_ == MQTT_format::CUSTOM)) {
-        Mqtt::publish(F("sensors"), doc);
-    } else if (mqtt_format_ == MQTT_format::HA) {
-        Mqtt::publish(F("homeassistant/sensor/ems-esp/state"), doc);
+    if (mqtt_format_ != Mqtt::Format::SINGLE) {
+        Mqtt::publish(F("sensor_data"), doc.as<JsonObject>());
     }
 }
+
 } // namespace emsesp

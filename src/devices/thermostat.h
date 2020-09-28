@@ -101,13 +101,12 @@ class Thermostat : public EMSdevice {
     virtual void publish_values();
     virtual void device_info_web(JsonArray & root);
     virtual bool updated_values();
-    virtual void add_context_menu();
 
   private:
     static uuid::log::Logger logger_;
 
-    void console_commands(Shell & shell, unsigned int context);
     void add_commands();
+    bool export_values(uint8_t mqtt_format, JsonObject & doc);
 
     // specific thermostat characteristics, stripping the option bits at pos 6 and 7
     inline uint8_t model() const {
@@ -121,7 +120,6 @@ class Thermostat : public EMSdevice {
 
     std::string datetime_; // date and time stamp
 
-    uint8_t mqtt_format_; // single, nested or ha
     bool    changed_ = false;
 
     // Installation parameters
@@ -221,6 +219,9 @@ class Thermostat : public EMSdevice {
     std::shared_ptr<Thermostat::HeatingCircuit> heating_circuit(const uint8_t hc_num);
 
     void register_mqtt_ha_config(uint8_t hc_num);
+    bool thermostat_ha_cmd(const char * message);
+
+    bool command_info(const char * value, const int8_t id, JsonObject & output);
 
     void process_RCOutdoorTemp(std::shared_ptr<const Telegram> telegram);
     void process_IBASettings(std::shared_ptr<const Telegram> telegram);
@@ -246,48 +247,43 @@ class Thermostat : public EMSdevice {
     void process_RC300WWmode(std::shared_ptr<const Telegram> telegram);
 
     // internal helper functions
-    void set_mode_n(const uint8_t mode, const uint8_t hc_num);
+    bool set_mode_n(const uint8_t mode, const uint8_t hc_num);
 
-    void set_temperature_value(const char * value, const int8_t id, const uint8_t mode);
-    void set_temperature(const float temperature, const std::string & mode, const uint8_t hc_num);
-    void set_temperature(const float temperature, const uint8_t mode, const uint8_t hc_num);
-
-    // for HA specifically. MQTT functions.
-    void thermostat_cmd_temp(const char * message);
-    void thermostat_cmd_mode(const char * message);
+    bool set_temperature_value(const char * value, const int8_t id, const uint8_t mode);
+    bool set_temperature(const float temperature, const std::string & mode, const uint8_t hc_num);
+    bool set_temperature(const float temperature, const uint8_t mode, const uint8_t hc_num);
 
     // set functions - these use the id/hc
-    void set_mode(const char * value, const int8_t id);
-    void set_control(const char * value, const int8_t id);
-    void set_holiday(const char * value, const int8_t id);
-    void set_pause(const char * value, const int8_t id);
-    void set_party(const char * value, const int8_t id);
+    bool set_mode(const char * value, const int8_t id);
+    bool set_control(const char * value, const int8_t id);
+    bool set_holiday(const char * value, const int8_t id);
+    bool set_pause(const char * value, const int8_t id);
+    bool set_party(const char * value, const int8_t id);
 
-    void set_temp(const char * value, const int8_t id);
-    void set_nighttemp(const char * value, const int8_t id);
-    void set_daytemp(const char * value, const int8_t id);
-    void set_comforttemp(const char * value, const int8_t id);
-    void set_nofrosttemp(const char * value, const int8_t id);
-    void set_ecotemp(const char * value, const int8_t id);
-    void set_heattemp(const char * value, const int8_t id);
-    void set_summertemp(const char * value, const int8_t id);
-    void set_designtemp(const char * value, const int8_t id);
-    void set_offsettemp(const char * value, const int8_t id);
-    void set_holidaytemp(const char * value, const int8_t id);
-    void set_manualtemp(const char * value, const int8_t id);
-
-    void set_remotetemp(const char * value, const int8_t id);
+    bool set_temp(const char * value, const int8_t id);
+    bool set_nighttemp(const char * value, const int8_t id);
+    bool set_daytemp(const char * value, const int8_t id);
+    bool set_comforttemp(const char * value, const int8_t id);
+    bool set_nofrosttemp(const char * value, const int8_t id);
+    bool set_ecotemp(const char * value, const int8_t id);
+    bool set_heattemp(const char * value, const int8_t id);
+    bool set_summertemp(const char * value, const int8_t id);
+    bool set_designtemp(const char * value, const int8_t id);
+    bool set_offsettemp(const char * value, const int8_t id);
+    bool set_holidaytemp(const char * value, const int8_t id);
+    bool set_manualtemp(const char * value, const int8_t id);
+    bool set_remotetemp(const char * value, const int8_t id);
 
     // set functions - these don't use the id/hc, the parameters are ignored
-    void set_wwmode(const char * value, const int8_t id);
-    void set_datetime(const char * value, const int8_t id);
-    void set_minexttemp(const char * value, const int8_t id);
-    void set_clockoffset(const char * value, const int8_t id);
-    void set_calinttemp(const char * value, const int8_t id);
-    void set_display(const char * value, const int8_t id);
-    void set_building(const char * value, const int8_t id);
-    void set_language(const char * value, const int8_t id);
-}; // namespace emsesp
+    bool set_wwmode(const char * value, const int8_t id);
+    bool set_datetime(const char * value, const int8_t id);
+    bool set_minexttemp(const char * value, const int8_t id);
+    bool set_clockoffset(const char * value, const int8_t id);
+    bool set_calinttemp(const char * value, const int8_t id);
+    bool set_display(const char * value, const int8_t id);
+    bool set_building(const char * value, const int8_t id);
+    bool set_language(const char * value, const int8_t id);
+};
 
 } // namespace emsesp
 

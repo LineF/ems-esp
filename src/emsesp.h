@@ -37,16 +37,18 @@
 #include "EMSESPStatusService.h"
 #include "EMSESPDevicesService.h"
 #include "EMSESPSettingsService.h"
+#include "EMSESPAPIService.h"
 
 #include "emsdevice.h"
 #include "emsfactory.h"
 #include "telegram.h"
 #include "mqtt.h"
 #include "system.h"
-#include "sensors.h"
+#include "sensor.h"
 #include "console.h"
 #include "shower.h"
 #include "roomcontrol.h"
+#include "command.h"
 
 #define WATCH_ID_NONE 0 // no watch id set
 
@@ -62,6 +64,7 @@ class EMSESP {
     static void publish_device_values(uint8_t device_type);
     static void publish_other_values();
     static void publish_sensor_values(const bool force = false);
+    static void publish_all();
 
 #ifdef EMSESP_STANDALONE
     static void run_test(uuid::console::Shell & shell, const std::string & command); // only for testing
@@ -100,14 +103,16 @@ class EMSESP {
     static void show_devices(uuid::console::Shell & shell);
     static void show_ems(uuid::console::Shell & shell);
 
-    static void add_context_menus();
-
     static void init_tx();
 
     static void incoming_telegram(uint8_t * data, const uint8_t length);
 
-    static const std::vector<Sensors::Device> sensor_devices() {
-        return sensors_.devices();
+    static const std::vector<Sensor::Device> sensor_devices() {
+        return sensor_.devices();
+    }
+
+    static bool have_sensors() {
+        return (!(sensor_.devices().empty()));
     }
 
     enum Watch : uint8_t { WATCH_OFF, WATCH_ON, WATCH_RAW };
@@ -151,7 +156,7 @@ class EMSESP {
     // services
     static Mqtt      mqtt_;
     static System    system_;
-    static Sensors   sensors_;
+    static Sensor    sensor_;
     static Console   console_;
     static Shower    shower_;
     static RxService rxservice_;
@@ -162,6 +167,7 @@ class EMSESP {
     static EMSESPSettingsService emsespSettingsService;
     static EMSESPStatusService   emsespStatusService;
     static EMSESPDevicesService  emsespDevicesService;
+    static EMSESPAPIService      emsespAPIService;
 
     static uuid::log::Logger logger() {
         return logger_;

@@ -16,32 +16,23 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef EMSESP_CONNECT_H
-#define EMSESP_CONNECT_H
+#ifndef EMSESPAPIService_h
+#define EMSESPAPIService_h
 
-#include <Arduino.h>
 #include <ArduinoJson.h>
+#include <AsyncJson.h>
+#include <ESPAsyncWebServer.h>
 
-#include <uuid/log.h>
-
-#include "emsdevice.h"
-#include "telegram.h"
-#include "helpers.h"
-#include "mqtt.h"
+#define EMSESP_API_SERVICE_PATH "/api"
 
 namespace emsesp {
 
-class Connect : public EMSdevice {
+class EMSESPAPIService {
   public:
-    Connect(uint8_t device_type, uint8_t device_id, uint8_t product_id, const std::string & version, const std::string & name, uint8_t flags, uint8_t brand);
-
-    virtual void show_values(uuid::console::Shell & shell);
-    virtual void publish_values();
-    virtual void device_info_web(JsonArray & root);
-    virtual bool updated_values();
+    EMSESPAPIService(AsyncWebServer * server);
 
   private:
-    static uuid::log::Logger logger_;
+    void emsespAPIService(AsyncWebServerRequest * request);
 };
 
 } // namespace emsesp

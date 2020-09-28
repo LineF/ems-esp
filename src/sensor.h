@@ -18,8 +18,8 @@
 
 // code originally written by nomis - https://github.com/nomis
 
-#ifndef EMSESP_SENSORS_H
-#define EMSESP_SENSORS_H
+#ifndef EMSESP_SENSOR_H
+#define EMSESP_SENSOR_H
 
 #include <string>
 #include <vector>
@@ -36,7 +36,7 @@
 
 namespace emsesp {
 
-class Sensors {
+class Sensor {
   public:
     class Device {
       public:
@@ -53,14 +53,17 @@ class Sensors {
         bool           registered_ = false;
     };
 
-    Sensors()  = default;
-    ~Sensors() = default;
+    Sensor()  = default;
+    ~Sensor() = default;
 
     void start();
     void loop();
     void publish_values();
     void reload();
     bool updated_values();
+
+    bool command_info(const char * value, const int8_t id, JsonObject & output);
+    bool export_values(JsonObject & doc);
 
     const std::vector<Device> devices() const;
 
@@ -108,7 +111,6 @@ class Sensors {
 
     bool registered_ha_[MAX_SENSORS];
 
-    uint8_t mqtt_format_;
     uint8_t retrycnt_    = 0;
     uint8_t dallas_gpio_ = 0;
     bool    parasite_    = false;

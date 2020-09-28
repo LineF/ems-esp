@@ -15,7 +15,6 @@ class DummySettings {
   public:
     uint8_t  tx_mode              = 1;
     uint8_t  ems_bus_id           = 0x0B;
-    bool     system_heartbeat     = false;
     int8_t   syslog_level         = 1; // uuid::log::Level
     uint32_t syslog_mark_interval = 0;
     String   syslog_host          = "192.168.1.4";
@@ -23,6 +22,7 @@ class DummySettings {
     bool     shower_timer         = false;
     bool     shower_alert         = false;
     bool     hide_led             = false;
+    bool     api_enabled          = true;
     uint16_t publish_time         = 10; // seconds
     uint8_t  mqtt_format          = 3;  // 1=single, 2=nested, 3=ha, 4=custom
     uint8_t  mqtt_qos             = 0;
@@ -31,12 +31,19 @@ class DummySettings {
     String   jwtSecret            = "ems-esp";
     String   ssid                 = "ems-esp";
     String   password             = "ems-esp";
+    String   localIP;
+    String   gatewayIP;
+    String   subnetMask;
+    String   staticIPConfig;
+    String   dnsIP1;
+    String   dnsIP2;
     uint16_t publish_time_boiler;
     uint16_t publish_time_thermostat;
     uint16_t publish_time_solar;
     uint16_t publish_time_mixing;
     uint16_t publish_time_other;
     uint16_t publish_time_sensor;
+    uint8_t  bool_format;
 
     static void read(DummySettings & settings, JsonObject & root){};
     static void read(DummySettings & settings){};
@@ -103,6 +110,13 @@ class EMSESPSettingsService {
     void begin();
 
   private:
+};
+
+class JsonUtils {
+  public:
+    static void writeIP(JsonObject & root, const String & key, const String & ip) {
+        root[key] = ip;
+    }
 };
 
 #endif

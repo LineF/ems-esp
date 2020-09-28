@@ -5,26 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.2] 
+## [2.1] 
 
 ### Added
-- add boiler heatingactivated, automatic select parameter telegrams for write
-- add boiler wWType
-- support for uploading compressed firmware binaries
-- add wWType to MQTT publish
-- option to set the MQTT retain flag
+- boiler `heatingactivated`, automatic select parameter telegrams for write
+- boiler `wWType` parameter, in Console and MQTT
+- support for uploading compressed firmware binaries in web UI
+- setting to manually override the MQTT retain flag
+- New API via HTTP REST API to read and set values. See https://emsesp.github.io/docs/#/API
+- `show commands` command
+- exporting of system settings using the `system info` command in Web and Console. Added link into the Web's Settings page.
+- setting to change how booleans are rendered in MQTT (on/off, true/false, 1/0)
+- Added all remaining devices to Home Assistant's MQTT Discovery. No more yaml files!
 
 ### Fixed
 - fix wwontime readback
 - fixed support for RC300 via MQTT commands (#505)
+- Some minor optimizations to memory handling in the MQTT service
+- Prevent MQTT from publishing empty json payloads
+- Accurate detection of warm water and heating (#515)
 
 ### Changed
 - renamed wWCircPumpType to wWChargeType
-- Installation doc moved to wiki
+- Installation and Configuration notes moved to the official EMS-ESP documentation site
+- Removed the _cmd from the MQTT topic names
+- MQTT sensors topic renamed to sensor_data
+- `call` commands can be done from the Console root for all devices
 
 ### Removed
--
-
+- Console contexts for thermostat and boiler
+- Removed option to enable/disable the MQTT Heartbeat. It's always on.
+- renamed MQTT topic for Solar Module from `sm_data` to `solar_data`
 
 ## [2.0.1] September 13 2020
 
@@ -126,7 +137,7 @@ There are breaking changes in this release. See `publish_time` below and make su
 - Added `kick` command to reset core services like NTP, Web, Web Sockets
 - Added WiFi static IP (setting done in WebUI only)
 - `log w <type_id>` for watching a specific telegram type ID
-- initial support for EMS+ GB125s and MC110's (https://github.com/proddy/EMS-ESP/wiki/MC110-controller)
+- initial support for EMS+ GB125s and MC110's
 - Buderus RFM200 receiver
 
 ### Fixed
@@ -170,7 +181,7 @@ There are breaking changes in this release. See `publish_time` below and make su
 ## [1.9.2] 2019-10-19
 
 #### Important! This build has breaking changes:
- - MQTT topics have changed. Use the `mqttlog` command to see the names of the subscriptions and the format of the payload data. Also reference the [Wiki page](https://github.com/proddy/EMS-ESP/wiki/MQTT).
+ - MQTT topics have changed. Use the `mqttlog` command to see the names of the subscriptions and the format of the payload data.
  - Home Assistant `.yaml` files need updating to reflect the recent MQTT changes
  - The web builder has been upgraded to use Gulp 4. Remove `tools/webfilesbuilder/node_modules` and re-install the libraries using `npm ci` from within the `tools/webfilesbuilder` folder
 
@@ -220,7 +231,7 @@ There are breaking changes in this release. See `publish_time` below and make su
 - Web login password is now mandatory
 - Faster detection of EMS devices on bus by using the 0x07 telegram instead of the brute-force scan
 - Fixes to the default HA climate component .yaml file to support latest Home Assistance ('heat' added)
-- Update documentation in Wiki on MQTT and troubleshooting
+- Update documentation on MQTT and troubleshooting
 - Slowed down firmware upload via the Web to prevent users rebooting too early
 - Change way WiFi is initialized to prevent dual AP and Client
   
@@ -233,7 +244,7 @@ There are breaking changes in this release. See `publish_time` below and make su
 
 ### Changed
 
-- New web interface with more features showing Boiler, Thermostat, Solar Module and Heat Pump. See https://github.com/proddy/EMS-ESP/wiki/Running-and-Monitoring
+- New web interface with more features showing Boiler, Thermostat, Solar Module and Heat Pump.
 - Merged with @susisstrolch's TxMode2 branch for improved support for sending EMS packages. This is the default tx mode.
 - Upgraded MyESP library optimizations for WiFi, AP and error handling
 - `reboot` command renamed to `restart` to keep consistent with web interface
@@ -249,12 +260,12 @@ There are breaking changes in this release. See `publish_time` below and make su
 ### Added
 
 - Added back -DCRASH in Debug build target for capturing any ESP8266 stack dumps during crashes
-- Web Interface, for checking stats and setting wifi credentials. See wiki for more details.
+- Web Interface, for checking stats and setting wifi credentials. See documentation for more details.
 - reset firmware option. If the reset button on the ESP is pressed during boot up sequence (the LED is flashing very fast) all settings are erased and goes into AP mode.
 - Added tx_mode back with options 0,1 and 2 until we've fixed option 2 that works for everyone and doesn't reset ESP
 - More solar module data captured, thanks to @Vuego123
 - Detect thermostat mode for EMS+ RC300/Moduline 3000
-- MQTT message to set boiler flowtemp (`boiler_cmd_flowtemp`). See [wiki](https://github.com/proddy/EMS-ESP/wiki/MQTT).
+- MQTT message to set boiler flowtemp (`boiler_cmd_flowtemp`).
 
 ### Fixed
 
