@@ -203,19 +203,16 @@ void EMSESP::show_ems(uuid::console::Shell & shell) {
     shell.println();
 
     if (bus_status() != BUS_STATUS_OFFLINE) {
-        uint8_t success_rate = 0;
-        if (rxservice_.telegram_error_count()) {
-            success_rate = ((float)rxservice_.telegram_error_count() / (float)rxservice_.telegram_count()) * 100;
-        }
-
         shell.printfln(F("EMS Bus info:"));
         EMSESP::emsespSettingsService.read([&](EMSESPSettings & settings) { shell.printfln(F("  Tx mode: %d"), settings.tx_mode); });
         shell.printfln(F("  Bus protocol: %s"), EMSbus::is_ht3() ? F("HT3") : F("Buderus"));
         shell.printfln(F("  #telegrams received: %d"), rxservice_.telegram_count());
         shell.printfln(F("  #read requests sent: %d"), txservice_.telegram_read_count());
         shell.printfln(F("  #write requests sent: %d"), txservice_.telegram_write_count());
-        shell.printfln(F("  #incomplete telegrams: %d (%d%%)"), rxservice_.telegram_error_count(), success_rate);
+        shell.printfln(F("  #incomplete telegrams: %d"), rxservice_.telegram_error_count());
         shell.printfln(F("  #tx fails (after %d retries): %d"), TxService::MAXIMUM_TX_RETRIES, txservice_.telegram_fail_count());
+        shell.printfln(F("  Rx line quality: %d%%"), rxservice_.quality());
+        shell.printfln(F("  Tx line quality: %d%%"), txservice_.quality());
     }
 
     shell.println();
@@ -302,9 +299,21 @@ void EMSESP::publish_all() {
 }
 
 void EMSESP::publish_device_values(uint8_t device_type) {
+    if (device_type == EMSdevice::DeviceType::MIXING && Mqtt::mqtt_format() != Mqtt::Format::SINGLE) {
+        StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> doc;
+        JsonObject                                      output = doc.to<JsonObject>();
+        for (const auto & emsdevice : emsdevices) {
+            if (emsdevice && (emsdevice->device_type() == device_type)) {
+                emsdevice->publish_values(output);
+            }
+        }
+        Mqtt::publish("mixing_data", doc.as<JsonObject>());
+        return;
+    }
     for (const auto & emsdevice : emsdevices) {
         if (emsdevice && (emsdevice->device_type() == device_type)) {
-            emsdevice->publish_values();
+            JsonObject dummy;
+            emsdevice->publish_values(dummy);
         }
     }
 }
@@ -313,7 +322,8 @@ void EMSESP::publish_other_values() {
     for (const auto & emsdevice : emsdevices) {
         if (emsdevice && (emsdevice->device_type() != EMSdevice::DeviceType::BOILER) && (emsdevice->device_type() != EMSdevice::DeviceType::THERMOSTAT)
             && (emsdevice->device_type() != EMSdevice::DeviceType::SOLAR) && (emsdevice->device_type() != EMSdevice::DeviceType::MIXING)) {
-            emsdevice->publish_values();
+            JsonObject dummy;
+            emsdevice->publish_values(dummy);
         }
     }
 }
@@ -559,7 +569,7 @@ bool EMSESP::process_telegram(std::shared_ptr<const Telegram> telegram) {
                         if (telegram->type_id == publish_id_) {
                             publish_id_ = 0;
                         }
-                        emsdevice->publish_values(); // publish to MQTT if we explicitly have too
+                        publish_device_values(emsdevice->device_type()); // publish to MQTT if we explicitly have too
                     }
                 }
                 break;
@@ -655,7 +665,7 @@ bool EMSESP::add_device(const uint8_t device_id, const uint8_t product_id, std::
                 for (const auto & device : device_library_) {
                     if (device.product_id == product_id) {
                         emsdevice->name(uuid::read_flash_string(device.name));
-                        emsdevice->flags(device.flags);
+                        emsdevice->add_flags(device.flags);
                     }
                 }
 
@@ -696,6 +706,11 @@ bool EMSESP::add_device(const uint8_t device_id, const uint8_t product_id, std::
     }
 
     return true;
+}
+
+// send a read request, passing it into to the Tx Service, with offset
+void EMSESP::send_read_request(const uint16_t type_id, const uint8_t dest, const uint8_t offset) {
+    txservice_.read_request(type_id, dest, offset);
 }
 
 // send a read request, passing it into to the Tx Service, with no offset

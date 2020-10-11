@@ -37,14 +37,14 @@ class Mixing : public EMSdevice {
     Mixing(uint8_t device_type, uint8_t device_id, uint8_t product_id, const std::string & version, const std::string & name, uint8_t flags, uint8_t brand);
 
     virtual void show_values(uuid::console::Shell & shell);
-    virtual void publish_values();
+    virtual void publish_values(JsonObject & data);
     virtual void device_info_web(JsonArray & root);
     virtual bool updated_values();
 
   private:
     static uuid::log::Logger logger_;
 
-    bool export_values(JsonObject & doc);
+    bool export_values(uint8_t mqtt_format, JsonObject & doc);
     void register_mqtt_ha_config(const char * topic);
     bool command_info(const char * value, const int8_t id, JsonObject & output);
 
@@ -72,13 +72,13 @@ class Mixing : public EMSdevice {
   private:
     uint16_t hc_          = EMS_VALUE_USHORT_NOTSET;
     uint16_t flowTemp_    = EMS_VALUE_USHORT_NOTSET;
-    uint8_t  pump_        = EMS_VALUE_UINT_NOTSET;
+    uint8_t  pumpStatus_  = EMS_VALUE_UINT_NOTSET;
     int8_t   status_      = EMS_VALUE_UINT_NOTSET;
     uint8_t  flowSetTemp_ = EMS_VALUE_UINT_NOTSET;
     Type     type_        = Type::NONE;
 
-    bool changed_    = false;
-    bool ha_created_ = false; // for HA MQTT Discovery
+    bool changed_        = false;
+    bool mqtt_ha_config_ = false; // for HA MQTT Discovery
 };
 
 } // namespace emsesp

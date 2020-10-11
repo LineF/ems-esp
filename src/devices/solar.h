@@ -37,7 +37,7 @@ class Solar : public EMSdevice {
     Solar(uint8_t device_type, uint8_t device_id, uint8_t product_id, const std::string & version, const std::string & name, uint8_t flags, uint8_t brand);
 
     virtual void show_values(uuid::console::Shell & shell);
-    virtual void publish_values();
+    virtual void publish_values(JsonObject & data);
     virtual void device_info_web(JsonArray & root);
     virtual bool updated_values();
 
@@ -68,8 +68,8 @@ class Solar : public EMSdevice {
     uint8_t configFlag_       = EMS_VALUE_BOOL_NOTSET;
     uint8_t userFlag_         = EMS_VALUE_BOOL_NOTSET;
 
-    bool changed_    = false;
-    bool ha_created_ = false; // for HA MQTT Discovery
+    bool changed_        = false;
+    bool mqtt_ha_config_ = false; // for HA MQTT Discovery
 
     void process_SM10Monitor(std::shared_ptr<const Telegram> telegram);
     void process_SM100Monitor(std::shared_ptr<const Telegram> telegram);

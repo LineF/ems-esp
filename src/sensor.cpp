@@ -325,10 +325,7 @@ void Sensor::publish_values() {
     for (const auto & device : devices_) {
         char s[7];
 
-        if (mqtt_format_ == Mqtt::Format::CUSTOM) {
-            // e.g. sensor_data = {28-EA41-9497-0E03-5F":23.30,"28-233D-9497-0C03-8B":24.0}
-            doc[device.to_string()] = Helpers::render_value(s, device.temperature_c, 1);
-        } else if ((mqtt_format_ == Mqtt::Format::NESTED) || (mqtt_format_ == Mqtt::Format::HA)) {
+        if ((mqtt_format_ == Mqtt::Format::NESTED) || (mqtt_format_ == Mqtt::Format::HA)) {
             // e.g. sensor_data = {"sensor1":{"id":"28-EA41-9497-0E03-5F","temp":"23.30"},"sensor2":{"id":"28-233D-9497-0C03-8B","temp":"24.0"}}
             char sensorID[20]; // sensor{1-n}
             strlcpy(sensorID, "sensor", 20);
@@ -344,8 +341,12 @@ void Sensor::publish_values() {
             // to e.g. homeassistant/sensor/ems-esp/dallas_sensor1/config
             if (!(registered_ha_[i])) {
                 StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> config;
-                config["dev_cla"]      = F("temperature");
-                config["stat_t"]       = F("ems-esp/sensor_data");
+                config["dev_cla"] = F("temperature");
+
+                char stat_t[50];
+                snprintf_P(stat_t, sizeof(stat_t), PSTR("%s/sensor_data"), System::hostname().c_str());
+                config["stat_t"] = stat_t;
+
                 config["unit_of_meas"] = F("°C");
 
                 char str[50];
@@ -372,9 +373,7 @@ void Sensor::publish_values() {
         i++; // increment sensor count
     }
 
-    if (mqtt_format_ != Mqtt::Format::SINGLE) {
-        Mqtt::publish(F("sensor_data"), doc.as<JsonObject>());
-    }
+    Mqtt::publish(F("sensor_data"), doc.as<JsonObject>());
 }
 
 } // namespace emsesp
