@@ -47,7 +47,7 @@ class Helpers {
 
     static char *   smallitoa(char * result, const uint8_t value);
     static char *   smallitoa(char * result, const uint16_t value);
-    static char *   itoa(char * result, int16_t value, const uint8_t base = 10);
+    static char *   itoa(char * result, int32_t value, const uint8_t base = 10);
     static uint32_t hextoint(const char * hex);
     static uint16_t atoint(const char * value);
     static bool     check_abs(const int32_t i);

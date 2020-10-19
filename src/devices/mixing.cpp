@@ -114,21 +114,21 @@ void Mixing::show_values(uuid::console::Shell & shell) {
 
     if (type() == Type::HC) {
         shell.printfln(F_(hc), hc_);
-        print_value_json(shell, F("flowTemp"), F("  "), F_(flowTemp), F_(degrees), output);
-        print_value_json(shell, F("flowSetTemp"), F("  "), F_(flowSetTemp), F_(degrees), output);
-        print_value_json(shell, F("pumpStatus"), F("  "), F_(pumpStatus), nullptr, output);
-        print_value_json(shell, F("valveStatus"), F("  "), F_(valveStatus), F_(percent), output);
+        print_value_json(shell, F("flowTemp"), F_(2spaces), F_(flowTemp), F_(degrees), output);
+        print_value_json(shell, F("flowSetTemp"), F_(2spaces), F_(flowSetTemp), F_(degrees), output);
+        print_value_json(shell, F("pumpStatus"), F_(2spaces), F_(pumpStatus), nullptr, output);
+        print_value_json(shell, F("valveStatus"), F_(2spaces), F_(valveStatus), F_(percent), output);
     } else {
         shell.printfln(F_(ww_hc), hc_);
-        print_value_json(shell, F("wwTemp"), F("  "), F_(wwTemp), F_(degrees), output);
-        print_value_json(shell, F("pumpStatus"), F("  "), F_(pumpStatus), nullptr, output);
-        print_value_json(shell, F("tempStatus"), F("  "), F_(tempStatus), nullptr, output);
+        print_value_json(shell, F("wwTemp"), F_(2spaces), F_(wwTemp), F_(degrees), output);
+        print_value_json(shell, F("pumpStatus"), F_(2spaces), F_(pumpStatus), nullptr, output);
+        print_value_json(shell, F("tempStatus"), F_(2spaces), F_(tempStatus), nullptr, output);
     }
 
     shell.println();
 }
 
-// export all valuet to info command
+// export all values to info command
 bool Mixing::command_info(const char * value, const int8_t id, JsonObject & output) {
     if (id != (device_id() - 0x20 + 1) && id > 0) { // defaults to first hc if no id
         return false;
@@ -153,7 +153,7 @@ void Mixing::publish_values(JsonObject & data) {
         if (export_values(Mqtt::mqtt_format(), data)) {
             // if we're using Home Assistant and haven't created the MQTT Discovery topics, do it now
             if ((Mqtt::mqtt_format() == Mqtt::Format::HA) && (!mqtt_ha_config_)) {
-                register_mqtt_ha_config("mixing_data");
+                register_mqtt_ha_config();
                 mqtt_ha_config_ = true;
             }
         }
@@ -161,14 +161,22 @@ void Mixing::publish_values(JsonObject & data) {
 }
 
 // publish config topic for HA MQTT Discovery
-void Mixing::register_mqtt_ha_config(const char * topic) {
+void Mixing::register_mqtt_ha_config() {
+    // Create the Master device
     StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> doc;
-    doc["name"]    = F("EMS-ESP");
-    doc["uniq_id"] = F("mixing");
-    doc["ic"]      = F("mdi:home-thermometer-outline");
+
+    char str1[20];
+    snprintf_P(str1, sizeof(str1), PSTR("Mixing %d"), device_id() - 0x20 + 1);
+    doc["name"] = str1;
+
+    char str2[20];
+    snprintf_P(str2, sizeof(str2), PSTR("mixing %d"), device_id() - 0x20 + 1);
+    doc["uniq_id"] = str2;
+
+    doc["ic"] = F("mdi:home-thermometer-outline");
 
     char stat_t[50];
-    snprintf_P(stat_t, sizeof(stat_t), PSTR("%s/%s"), System::hostname().c_str(), topic);
+    snprintf_P(stat_t, sizeof(stat_t), PSTR("%s/mixing_data"), System::hostname().c_str());
     doc["stat_t"] = stat_t;
 
     doc["val_tpl"] = F("{{value_json.type}}"); // HA needs a single value. We take the type which is wwc or hc
@@ -179,23 +187,23 @@ void Mixing::register_mqtt_ha_config(const char * topic) {
     dev["mdl"]     = this->name();
     JsonArray ids  = dev.createNestedArray("ids");
     ids.add("ems-esp-mixing");
-    Mqtt::publish_retain(F("homeassistant/sensor/ems-esp/mixing/config"), doc.as<JsonObject>(), true); // publish the config payload with retain flag
 
+    std::string topic(100, '\0');
     if (this->type() == Type::HC) {
+        snprintf_P(&topic[0], topic.capacity() + 1, PSTR("homeassistant/climate/ems-esp/mixing_hc%d/config"), hc_);
+        Mqtt::publish_retain(topic, doc.as<JsonObject>(), true); // publish the config payload with retain flag
         char hc_name[10];
-        char s[5];
-        strlcpy(hc_name, "hc", 10);
-        strlcat(hc_name, Helpers::itoa(s, device_id() - 0x20 + 1), 10); // append device_id to topic
+        snprintf_P(hc_name, sizeof(hc_name), PSTR("hc%d"), hc_);
         Mqtt::register_mqtt_ha_sensor(hc_name, F_(flowTemp), this->device_type(), "flowTemp", F_(degrees), F_(icontemperature));
         Mqtt::register_mqtt_ha_sensor(hc_name, F_(flowSetTemp), this->device_type(), "flowSetTemp", F_(degrees), F_(icontemperature));
         Mqtt::register_mqtt_ha_sensor(hc_name, F_(pumpStatus), this->device_type(), "pumpStatus", nullptr, nullptr);
         Mqtt::register_mqtt_ha_sensor(hc_name, F_(valveStatus), this->device_type(), "valveStatus", nullptr, nullptr);
     } else {
         // WWC
+        snprintf_P(&topic[0], topic.capacity() + 1, PSTR("homeassistant/climate/ems-esp/mixing_wwc%d/config"), hc_);
+        Mqtt::publish_retain(topic, doc.as<JsonObject>(), true); // publish the config payload with retain flag
         char wwc_name[10];
-        char s[5];
-        strlcpy(wwc_name, "wwc", 10);
-        strlcat(wwc_name, Helpers::itoa(s, device_id() - 0x20 + 1), 10); // append device_id to topic
+        snprintf_P(wwc_name, sizeof(wwc_name), PSTR("wwc%d"), hc_);
         Mqtt::register_mqtt_ha_sensor(wwc_name, F_(wwTemp), this->device_type(), "wwTemp", F_(degrees), F_(icontemperature));
         Mqtt::register_mqtt_ha_sensor(wwc_name, F_(pumpStatus), this->device_type(), "pumpStatus", nullptr, nullptr);
         Mqtt::register_mqtt_ha_sensor(wwc_name, F_(tempStatus), this->device_type(), "tempStatus", nullptr, nullptr);
@@ -231,7 +239,7 @@ bool Mixing::export_values(uint8_t mqtt_format, JsonObject & output) {
         }
     } else {
         snprintf_P(hc_name, sizeof(hc_name), PSTR("wwc%d"), hc_);
-        if (mqtt_format == Mqtt::Format::NESTED) {
+        if (mqtt_format == Mqtt::Format::NESTED || mqtt_format == Mqtt::Format::HA) {
             output_hc = output.createNestedObject(hc_name);
         } else {
             output_hc      = output;
