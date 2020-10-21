@@ -237,7 +237,7 @@ void EMSESP::show_ems(uuid::console::Shell & shell) {
     } else {
         shell.printfln(F("Tx Queue (%ld telegram%s):"), tx_telegrams.size(), tx_telegrams.size() == 1 ? "" : "s");
 
-        std::string op(10, '\0');
+        std::string op;
         for (const auto & it : tx_telegrams) {
             if ((it.telegram_->operation) == Telegram::Operation::TX_RAW) {
                 op = read_flash_string(F("RAW  "));
@@ -288,12 +288,12 @@ void EMSESP::show_sensor_values(uuid::console::Shell & shell) {
 }
 
 // MQTT publish everything, immediately
-void EMSESP::publish_all() {
+void EMSESP::publish_all(bool force) {
     if (Mqtt::connected()) {
-        publish_device_values(EMSdevice::DeviceType::BOILER);
-        publish_device_values(EMSdevice::DeviceType::THERMOSTAT);
-        publish_device_values(EMSdevice::DeviceType::SOLAR);
-        publish_device_values(EMSdevice::DeviceType::MIXING);
+        publish_device_values(EMSdevice::DeviceType::BOILER, force);
+        publish_device_values(EMSdevice::DeviceType::THERMOSTAT, force);
+        publish_device_values(EMSdevice::DeviceType::SOLAR, force);
+        publish_device_values(EMSdevice::DeviceType::MIXING, force);
         publish_other_values();
         publish_sensor_values(true);
         system_.send_heartbeat();
@@ -302,23 +302,24 @@ void EMSESP::publish_all() {
 
 // create json doc for the devices values and add to MQTT publish queue
 // special case for Mixing units, since we want to bundle all devices together into one payload
-void EMSESP::publish_device_values(uint8_t device_type) {
+void EMSESP::publish_device_values(uint8_t device_type, bool force) {
     if (device_type == EMSdevice::DeviceType::MIXING && Mqtt::mqtt_format() != Mqtt::Format::SINGLE) {
         DynamicJsonDocument doc(EMSESP_MAX_JSON_SIZE_LARGE);
         JsonObject          output = doc.to<JsonObject>();
         for (const auto & emsdevice : emsdevices) {
             if (emsdevice && (emsdevice->device_type() == device_type)) {
-                emsdevice->publish_values(output);
+                emsdevice->publish_values(output, force);
             }
         }
         doc.shrinkToFit();
         Mqtt::publish("mixing_data", doc.as<JsonObject>());
         return;
     }
+
     for (const auto & emsdevice : emsdevices) {
         if (emsdevice && (emsdevice->device_type() == device_type)) {
             JsonObject dummy;
-            emsdevice->publish_values(dummy);
+            emsdevice->publish_values(dummy, force);
         }
     }
 }
@@ -386,9 +387,9 @@ std::string EMSESP::pretty_telegram(std::shared_ptr<const Telegram> telegram) {
     uint8_t offset = telegram->offset;
 
     // find name for src and dest by looking up known devices
-    std::string src_name(20, '\0');
-    std::string dest_name(20, '\0');
-    std::string type_name(20, '\0');
+    std::string src_name;
+    std::string dest_name;
+    std::string type_name;
     for (const auto & emsdevice : emsdevices) {
         if (emsdevice) {
             // get src & dest
@@ -424,7 +425,6 @@ std::string EMSESP::pretty_telegram(std::shared_ptr<const Telegram> telegram) {
     }
 
     std::string str(200, '\0');
-
     if (offset) {
         snprintf_P(&str[0],
                    str.capacity() + 1,

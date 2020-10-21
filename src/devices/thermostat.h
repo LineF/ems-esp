@@ -100,7 +100,7 @@ class Thermostat : public EMSdevice {
     static std::string mode_tostring(uint8_t mode);
 
     virtual void show_values(uuid::console::Shell & shell);
-    virtual void publish_values(JsonObject & data);
+    virtual void publish_values(JsonObject & data, bool force);
     virtual void device_info_web(JsonArray & root);
     virtual bool updated_values();
 
@@ -110,9 +110,11 @@ class Thermostat : public EMSdevice {
     void add_commands();
     bool export_values_main(JsonObject & doc);
     bool export_values_hc(uint8_t mqtt_format, JsonObject & doc);
+
     bool ha_registered() const {
         return ha_registered_;
     }
+
     void ha_registered(bool b) {
         ha_registered_ = b;
     }
@@ -237,6 +239,7 @@ class Thermostat : public EMSdevice {
 
     void register_mqtt_ha_config();
     void register_mqtt_ha_config(uint8_t hc_num);
+    void ha_config(bool force = false);
     bool thermostat_ha_cmd(const char * message, uint8_t hc_num);
 
     bool command_info(const char * value, const int8_t id, JsonObject & output);

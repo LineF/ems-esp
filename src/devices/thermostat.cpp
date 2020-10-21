@@ -194,6 +194,7 @@ void Thermostat::device_info_web(JsonArray & root) {
 
     StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> doc_hc;
     JsonObject                                      output_hc = doc_hc.to<JsonObject>();
+
     if (export_values_hc(Mqtt::Format::NESTED, output_hc)) {
         // display for each active heating circuit
         for (const auto & hc : heating_circuits_) {
@@ -214,6 +215,7 @@ void Thermostat::device_info_web(JsonArray & root) {
                 print_value_json(root, F("manualtemp"), FPSTR(prefix_str), F_(manualtemp), F_(degrees), output);
                 print_value_json(root, F("holidaytemp"), FPSTR(prefix_str), F_(holidaytemp), F_(degrees), output);
                 print_value_json(root, F("nofrosttemp"), FPSTR(prefix_str), F_(nofrosttemp), F_(degrees), output);
+                print_value_json(root, F("heatingtype"), FPSTR(prefix_str), F_(heatingtype), nullptr, output);
                 print_value_json(root, F("targetflowtemp"), FPSTR(prefix_str), F_(targetflowtemp), F_(degrees), output);
                 print_value_json(root, F("offsettemp"), FPSTR(prefix_str), F_(offsettemp), F_(degrees), output);
                 print_value_json(root, F("designtemp"), FPSTR(prefix_str), F_(designtemp), F_(degrees), output);
@@ -254,8 +256,8 @@ bool Thermostat::command_info(const char * value, const int8_t id, JsonObject & 
 void Thermostat::show_values(uuid::console::Shell & shell) {
     EMSdevice::show_values(shell); // always call this to show header
 
-    StaticJsonDocument<EMSESP_MAX_JSON_SIZE_SMALL> doc_main;
-    JsonObject                                     output_main = doc_main.to<JsonObject>();
+    StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> doc_main;
+    JsonObject                                      output_main = doc_main.to<JsonObject>();
     if (export_values_main(output_main)) {
         print_value_json(shell, F("time"), nullptr, F_(time), nullptr, output_main);
         print_value_json(shell, F("errorcode"), nullptr, F_(error), nullptr, output_main);
@@ -313,10 +315,11 @@ void Thermostat::show_values(uuid::console::Shell & shell) {
 }
 
 // publish values via MQTT
-void Thermostat::publish_values(JsonObject & data) {
+void Thermostat::publish_values(JsonObject & data, bool force) {
     if (EMSESP::actual_master_thermostat() != this->device_id()) {
         return;
     }
+
     StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> doc;
     JsonObject                                      output   = doc.to<JsonObject>();
     bool                                            has_data = false;
@@ -334,6 +337,10 @@ void Thermostat::publish_values(JsonObject & data) {
 
     // if we're in HA or CUSTOM, send out the complete topic with all the data
     if (Mqtt::mqtt_format() != Mqtt::Format::SINGLE && has_data) {
+        // see if we have already registered this with HA MQTT Discovery, if not send the config
+        if (Mqtt::mqtt_format() == Mqtt::Format::HA) {
+            ha_config(force);
+        }
         Mqtt::publish(F("thermostat_data"), output);
     }
 }
@@ -448,12 +455,6 @@ bool Thermostat::export_values_main(JsonObject & rootThermostat) {
     if (Helpers::hasValue(wwCircMode_)) {
         char s[7];
         rootThermostat["wwcircmode"] = Helpers::render_enum(s, {"off", "on", "auto"}, wwCircMode_);
-    }
-
-    if ((Mqtt::mqtt_format() == Mqtt::Format::HA) && (!ha_registered())) {
-        // see if we have already registered this with HA MQTT Discovery, if not send the config
-        register_mqtt_ha_config();
-        ha_registered(true);
     }
 
     return (rootThermostat.size());
@@ -622,15 +623,31 @@ bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermost
                 strlcat(topic, Helpers::itoa(s, hc->hc_num()), 30); // append hc to topic
                 Mqtt::publish(topic, rootThermostat);
                 rootThermostat.clear(); // clear object
-            } else if ((mqtt_format == Mqtt::Format::HA) && (!hc->ha_registered())) {
-                // see if we have already registered this with HA MQTT Discovery, if not send the config
-                register_mqtt_ha_config(hc->hc_num());
-                hc->ha_registered(true);
             }
         }
     }
 
     return (has_data);
+}
+
+// set up HA MQTT Discovery
+void Thermostat::ha_config(bool force) {
+    if (!Mqtt::connected()) {
+        return;
+    }
+
+    if (force || !ha_registered()) {
+        register_mqtt_ha_config();
+        ha_registered(true);
+    }
+
+    // check to see which heating circuits need publishing
+    for (const auto & hc : heating_circuits_) {
+        if (force || (hc->is_active() && !hc->ha_registered())) {
+            register_mqtt_ha_config(hc->hc_num());
+            hc->ha_registered(true);
+        }
+    }
 }
 
 // returns the heating circuit object based on the hc number
@@ -734,10 +751,9 @@ std::shared_ptr<Thermostat::HeatingCircuit> Thermostat::heating_circuit(std::sha
 }
 
 // publish config topic for HA MQTT Discovery
-// homeassistant/climate/ems-esp/thermostat_/config
+// homeassistant/climate/ems-esp/thermostat/config
 void Thermostat::register_mqtt_ha_config() {
     StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> doc;
-    doc["name"]    = F("Thermostat");
     doc["uniq_id"] = F("thermostat");
     doc["ic"]      = F("mdi:home-thermometer-outline");
 
@@ -745,7 +761,8 @@ void Thermostat::register_mqtt_ha_config() {
     snprintf_P(stat_t, sizeof(stat_t), PSTR("%s/thermostat_data"), System::hostname().c_str());
     doc["stat_t"] = stat_t;
 
-    doc["val_tpl"] = F("{{value_json.time}}");
+    doc["name"]    = F("Thermostat Status");
+    doc["val_tpl"] = F("{{value_json.errorcode}}"); // default value - must have one, so we use errorcode
     JsonObject dev = doc.createNestedObject("dev");
     dev["name"]    = F("EMS-ESP Thermostat");
     dev["sw"]      = EMSESP_APP_VERSION;
@@ -755,25 +772,25 @@ void Thermostat::register_mqtt_ha_config() {
     ids.add("ems-esp-thermostat");
     Mqtt::publish_retain(F("homeassistant/sensor/ems-esp/thermostat/config"), doc.as<JsonObject>(), true); // publish the config payload with retain flag
 
-    Mqtt::register_mqtt_ha_sensor(nullptr, F_(time), this->device_type(), "time", nullptr, nullptr);
-    Mqtt::register_mqtt_ha_sensor(nullptr, F_(error), this->device_type(), "errorcode", nullptr, nullptr);
+    Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(time), this->device_type(), "time", nullptr, nullptr);
+    // Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(error), this->device_type(), "errorcode", nullptr, nullptr);
 
     uint8_t model = this->model();
 
     if (model == EMS_DEVICE_FLAG_RC30_1) {
-        Mqtt::register_mqtt_ha_sensor(nullptr, F_(display), this->device_type(), "display", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(nullptr, F_(language), this->device_type(), "language", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(display), this->device_type(), "display", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(language), this->device_type(), "language", nullptr, nullptr);
     }
 
     if (model == EMS_DEVICE_FLAG_RC35 || model == EMS_DEVICE_FLAG_RC35) {
         // excluding inttemp1, inttemp2, intoffset, minexttemp
-        Mqtt::register_mqtt_ha_sensor(nullptr, F_(dampedtemp), this->device_type(), "dampedtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, F_(building), this->device_type(), "building", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(nullptr, F_(minexttemp), this->device_type(), "minexttemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, F_(wwmode), this->device_type(), "wwmode", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(nullptr, F_(wwtemp), this->device_type(), "wwtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, F_(wwtemplow), this->device_type(), "wwtemplow", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, F_(wwcircmode), this->device_type(), "wwcircmode", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(dampedtemp), this->device_type(), "dampedtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(building), this->device_type(), "building", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(minexttemp), this->device_type(), "minexttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwmode), this->device_type(), "wwmode", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwtemp), this->device_type(), "wwtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwtemplow), this->device_type(), "wwtemplow", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwcircmode), this->device_type(), "wwcircmode", nullptr, nullptr);
     }
 }
 
@@ -867,40 +884,40 @@ void Thermostat::register_mqtt_ha_config(uint8_t hc_num) {
     char s[3];
     strlcat(hc_name, Helpers::itoa(s, hc_num), 10);
 
-    Mqtt::register_mqtt_ha_sensor(hc_name, F_(mode), this->device_type(), "mode", nullptr, nullptr);
+    Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(mode), this->device_type(), "mode", nullptr, nullptr);
 
     uint8_t model = this->model();
     switch (model) {
     case EMS_DEVICE_FLAG_RC100:
     case EMS_DEVICE_FLAG_RC300:
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(modetype), this->device_type(), "modetype", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(ecotemp), this->device_type(), "ecotemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(manualtemp), this->device_type(), "manualtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(comforttemp), this->device_type(), "comforttemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(summertemp), this->device_type(), "summertemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(modetype), this->device_type(), "modetype", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(ecotemp), this->device_type(), "ecotemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(manualtemp), this->device_type(), "manualtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(comforttemp), this->device_type(), "comforttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(summertemp), this->device_type(), "summertemp", F_(degrees), F_(icontemperature));
         break;
     case EMS_DEVICE_FLAG_RC20_2:
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(daytemp), this->device_type(), "daytemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(nighttemp), this->device_type(), "nighttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(daytemp), this->device_type(), "daytemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nighttemp), this->device_type(), "nighttemp", F_(degrees), F_(icontemperature));
         break;
     case EMS_DEVICE_FLAG_RC30_1:
     case EMS_DEVICE_FLAG_RC35:
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(modetype), this->device_type(), "modetype", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(nighttemp), this->device_type(), "nighttemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(daytemp), this->device_type(), "daytemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(designtemp), this->device_type(), "designtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(offsettemp), this->device_type(), "offsettemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(holidaytemp), this->device_type(), "holidaytemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(targetflowtemp), this->device_type(), "targetflowtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(summertemp), this->device_type(), "summertemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(nofrosttemp), this->device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(roominfluence), this->device_type(), "roominfluence", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(modetype), this->device_type(), "modetype", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nighttemp), this->device_type(), "nighttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(daytemp), this->device_type(), "daytemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(designtemp), this->device_type(), "designtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(offsettemp), this->device_type(), "offsettemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(holidaytemp), this->device_type(), "holidaytemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(targetflowtemp), this->device_type(), "targetflowtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(summertemp), this->device_type(), "summertemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nofrosttemp), this->device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(roominfluence), this->device_type(), "roominfluence", F_(degrees), F_(icontemperature));
         break;
     case EMS_DEVICE_FLAG_JUNKERS:
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(modetype), this->device_type(), "modetype", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(heattemp), this->device_type(), "heattemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(ecotemp), this->device_type(), "ecotemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, F_(nofrosttemp), this->device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(modetype), this->device_type(), "modetype", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(heattemp), this->device_type(), "heattemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(ecotemp), this->device_type(), "ecotemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nofrosttemp), this->device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
         break;
     default:
         break;

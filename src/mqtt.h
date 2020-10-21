@@ -100,6 +100,7 @@ class Mqtt {
 
     static void register_mqtt_ha_binary_sensor(const __FlashStringHelper * name, const uint8_t device_type, const char * entity);
     static void register_mqtt_ha_sensor(const char *                prefix,
+                                        const __FlashStringHelper * suffix,
                                         const __FlashStringHelper * name,
                                         const uint8_t               device_type,
                                         const char *                entity,
@@ -145,6 +146,10 @@ class Mqtt {
         return mqtt_format_;
     }
 
+    static AsyncMqttClient * client() {
+        return mqttClient_;
+    }
+
   private:
     static uuid::log::Logger logger_;
 
@@ -171,7 +176,7 @@ class Mqtt {
     static uint16_t mqtt_message_id_;
 
     static constexpr size_t   MAX_MQTT_MESSAGES      = 70;  // size of queue
-    static constexpr uint32_t MQTT_PUBLISH_WAIT      = 100; // delay between sending publishes, to account for large payloads
+    static constexpr uint32_t MQTT_PUBLISH_WAIT      = 200; // delay between sending publishes, to account for large payloads
     static constexpr uint8_t  MQTT_PUBLISH_MAX_RETRY = 3;   // max retries for giving up on publishing
 
     static std::shared_ptr<const MqttMessage> queue_message(const uint8_t operation, const std::string & topic, const std::string & payload, bool retain);

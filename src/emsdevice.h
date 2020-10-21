@@ -140,10 +140,10 @@ class EMSdevice {
     void register_mqtt_cmd(const __FlashStringHelper * cmd, cmdfunction_p f);
 
     // virtual functions overrules by derived classes
-    virtual void show_values(uuid::console::Shell & shell) = 0;
-    virtual void publish_values(JsonObject & data)         = 0;
-    virtual bool updated_values()                          = 0;
-    virtual void device_info_web(JsonArray & root)         = 0;
+    virtual void show_values(uuid::console::Shell & shell)             = 0;
+    virtual void publish_values(JsonObject & data, bool force = false) = 0;
+    virtual bool updated_values()                                      = 0;
+    virtual void device_info_web(JsonArray & root)                     = 0;
 
     std::string telegram_type_name(std::shared_ptr<const Telegram> telegram);
 
@@ -277,8 +277,6 @@ class EMSdevice {
     std::string name_; // the long name for the EMS model
     uint8_t     flags_ = 0;
     uint8_t     brand_ = Brand::NO_BRAND;
-
-    static uuid::log::Logger logger_;
 
     struct TelegramFunction {
         uint16_t                    telegram_type_id_;   // it's type_id
