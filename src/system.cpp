@@ -542,7 +542,7 @@ void System::console_commands(Shell & shell, unsigned int context) {
                                                                                             return StateUpdateResult::CHANGED;
                                                                                         },
                                                                                         "local");
-                                                                                    shell.println(F("Admin password updated"));
+                                                                                    shell.println(F("su password updated"));
                                                                                 } else {
                                                                                     shell.println(F("Passwords do not match"));
                                                                                 }
@@ -847,7 +847,7 @@ bool System::check_upgrade() {
 // value and id are ignored
 bool System::command_info(const char * value, const int8_t id, JsonObject & json) {
 #ifdef EMSESP_STANDALONE
-    json["test"] = "testing info command";
+    json["test"] = "testing system info command";
 #else
     EMSESP::esp8266React.getWiFiSettingsService()->read([&](WiFiSettings & settings) {
         char       s[7];
@@ -888,7 +888,7 @@ bool System::command_info(const char * value, const int8_t id, JsonObject & json
         node["publish_time_boiler"]     = settings.publish_time_boiler;
         node["publish_time_thermostat"] = settings.publish_time_thermostat;
         node["publish_time_solar"]      = settings.publish_time_solar;
-        node["publish_time_mixing"]     = settings.publish_time_mixing;
+        node["publish_time_mixer"]      = settings.publish_time_mixer;
         node["publish_time_other"]      = settings.publish_time_other;
         node["publish_time_sensor"]     = settings.publish_time_sensor;
         node["mqtt_format"]             = settings.mqtt_format;
@@ -932,7 +932,7 @@ bool System::command_info(const char * value, const int8_t id, JsonObject & json
         node["hide_led"]             = Helpers::render_boolean(s, settings.hide_led);
         node["api_enabled"]          = Helpers::render_boolean(s, settings.api_enabled);
         node["bool_format"]          = settings.bool_format;
-        node["analog_enabled"]       = settings.analog_enabled;
+        node["analog_enabled"]       = Helpers::render_boolean(s, settings.analog_enabled);
     });
 
 #endif
@@ -956,16 +956,17 @@ bool System::command_report(const char * value, const int8_t id, JsonObject & js
     node = json.createNestedObject("Settings");
 
     EMSESP::esp8266React.getMqttSettingsService()->read([&](MqttSettings & settings) {
+        char s[7];
+        node["enabled"]                 = Helpers::render_boolean(s, settings.enabled);
         node["publish_time_boiler"]     = settings.publish_time_boiler;
         node["publish_time_thermostat"] = settings.publish_time_thermostat;
         node["publish_time_solar"]      = settings.publish_time_solar;
-        node["publish_time_mixing"]     = settings.publish_time_mixing;
+        node["publish_time_mixer"]      = settings.publish_time_mixer;
         node["publish_time_other"]      = settings.publish_time_other;
         node["publish_time_sensor"]     = settings.publish_time_sensor;
         node["mqtt_format"]             = settings.mqtt_format;
         node["mqtt_qos"]                = settings.mqtt_qos;
-        char s[7];
-        node["mqtt_retain"] = Helpers::render_boolean(s, settings.mqtt_retain);
+        node["mqtt_retain"]             = Helpers::render_boolean(s, settings.mqtt_retain);
     });
 
     EMSESP::webSettingsService.read([&](WebSettings & settings) {
@@ -981,7 +982,7 @@ bool System::command_report(const char * value, const int8_t id, JsonObject & js
         node["hide_led"]          = Helpers::render_boolean(s, settings.hide_led);
         node["api_enabled"]       = Helpers::render_boolean(s, settings.api_enabled);
         node["bool_format"]       = settings.bool_format;
-        node["analog_enabled"]    = settings.analog_enabled;
+        node["analog_enabled"]    = Helpers::render_boolean(s, settings.analog_enabled);
     });
 
     node = json.createNestedObject("Status");

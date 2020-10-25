@@ -51,7 +51,7 @@ void EMSESPShell::started() {
 
 void EMSESPShell::stopped() {
     if (has_flags(CommandFlags::ADMIN)) {
-        logger().log(LogLevel::INFO, LogFacility::AUTH, F("Admin session closed on console %s"), console_name().c_str());
+        logger().log(LogLevel::INFO, LogFacility::AUTH, F("su session closed on console %s"), console_name().c_str());
     }
     logger().log(LogLevel::INFO, LogFacility::CONSOLE, F("User session closed on console %s"), console_name().c_str());
 
@@ -233,12 +233,12 @@ void EMSESPShell::add_console_commands() {
                                   Device_Ids.push_back(0x09); // Controllers - 0x09
                                   Device_Ids.push_back(0x02); // Connect - 0x02
                                   Device_Ids.push_back(0x48); // Gateway - 0x48
-                                  Device_Ids.push_back(0x20); // Mixing Devices - 0x20
-                                  Device_Ids.push_back(0x21); // Mixing Devices - 0x21
-                                  Device_Ids.push_back(0x22); // Mixing Devices - 0x22
-                                  Device_Ids.push_back(0x23); // Mixing Devices - 0x23
-                                  Device_Ids.push_back(0x28); // Mixing Devices WW- 0x28
-                                  Device_Ids.push_back(0x29); // Mixing Devices WW- 0x29
+                                  Device_Ids.push_back(0x20); // Mixer Devices - 0x20
+                                  Device_Ids.push_back(0x21); // Mixer Devices - 0x21
+                                  Device_Ids.push_back(0x22); // Mixer Devices - 0x22
+                                  Device_Ids.push_back(0x23); // Mixer Devices - 0x23
+                                  Device_Ids.push_back(0x28); // Mixer Devices WW- 0x28
+                                  Device_Ids.push_back(0x29); // Mixer Devices WW- 0x29
                                   Device_Ids.push_back(0x10); // Thermostats - 0x10
                                   Device_Ids.push_back(0x17); // Thermostats - 0x17
                                   Device_Ids.push_back(0x18); // Thermostat remote - 0x18
@@ -570,7 +570,7 @@ void Console::load_standard_commands(unsigned int context) {
                                        flash_string_vector{F_(su)},
                                        [=](Shell & shell, const std::vector<std::string> & arguments __attribute__((unused))) {
                                            auto become_admin = [](Shell & shell) {
-                                               shell.logger().log(LogLevel::NOTICE, LogFacility::AUTH, F("Admin session opened on console"));
+                                               shell.logger().log(LogLevel::NOTICE, LogFacility::AUTH, F("su session opened on console"));
                                                shell.add_flags(CommandFlags::ADMIN);
                                            };
 
@@ -586,7 +586,7 @@ void Console::load_standard_commands(unsigned int context) {
                                                                become_admin(shell);
                                                            } else {
                                                                shell.delay_until(now + INVALID_PASSWORD_DELAY_MS, [](Shell & shell) {
-                                                                   shell.logger().log(LogLevel::NOTICE, LogFacility::AUTH, F("Invalid admin password on console"));
+                                                                   shell.logger().log(LogLevel::NOTICE, LogFacility::AUTH, F("Invalid su password on console"));
                                                                    shell.println(F("su: incorrect password"));
                                                                });
                                                            }

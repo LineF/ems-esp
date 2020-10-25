@@ -27,7 +27,7 @@ namespace emsesp {
 // used with the 'test' command, under su/admin
 void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
     if (command == "default") {
-        run_test(shell, "mixing"); // add the default test case here
+        run_test(shell, "mixer"); // add the default test case here
     }
 
     if (command.empty()) {
@@ -808,8 +808,8 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
         EMSESP::txservice_.read_request(0x18, 0x08, 27); // no offset
     }
 
-    if (command == "mixing") {
-        shell.printfln(F("Testing Mixing..."));
+    if (command == "mixer") {
+        shell.printfln(F("Testing Mixer..."));
 
         // change MQTT format
         EMSESP::esp8266React.getMqttSettingsService()->updateWithoutPropagation([&](MqttSettings & mqttSettings) {
@@ -820,8 +820,11 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
         });
 
         EMSESP::rxservice_.ems_mask(EMSbus::EMS_MASK_BUDERUS);
-
         std::string version("1.2.3");
+
+        // add controller
+        EMSESP::add_device(0x09, 114, version, EMSdevice::Brand::BUDERUS);
+
         EMSESP::add_device(0x28, 160, version, EMSdevice::Brand::BUDERUS); // MM100, WWC
         EMSESP::add_device(0x29, 161, version, EMSdevice::Brand::BUDERUS); // MM200, WWC
         EMSESP::add_device(0x20, 160, version, EMSdevice::Brand::BOSCH);   // MM100
@@ -837,10 +840,10 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
 
         shell.invoke_command("show");
         shell.invoke_command("call");
-        shell.invoke_command("call mixing info");
+        shell.invoke_command("call mixer info");
         shell.invoke_command("publish");
         shell.invoke_command("show mqtt");
-        shell.invoke_command("call mixing");
+        shell.invoke_command("call mixer");
     }
 
     // finally dump to console
