@@ -1,6 +1,6 @@
 /*
  * EMS-ESP - https://github.com/proddy/EMS-ESP
- * Copyright 2019  Paul Derbyshire
+ * Copyright 2020  Paul Derbyshire
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -64,6 +64,7 @@ class Thermostat : public EMSdevice {
         uint8_t manualtemp        = EMS_VALUE_UINT_NOTSET;
         uint8_t summer_setmode    = EMS_VALUE_UINT_NOTSET;
         uint8_t roominfluence     = EMS_VALUE_UINT_NOTSET;
+        uint8_t flowtempoffset    = EMS_VALUE_UINT_NOTSET;
 
         uint8_t hc_num() const {
             return hc_num_;
@@ -85,7 +86,7 @@ class Thermostat : public EMSdevice {
         uint8_t get_mode(uint8_t flags) const;
         uint8_t get_mode_type(uint8_t flags) const;
 
-        enum Mode : uint8_t { UNKNOWN, OFF, MANUAL, AUTO, DAY, NIGHT, HEAT, NOFROST, ECO, HOLIDAY, COMFORT, OFFSET, DESIGN, SUMMER };
+        enum Mode : uint8_t { UNKNOWN, OFF, MANUAL, AUTO, DAY, NIGHT, HEAT, NOFROST, ECO, HOLIDAY, COMFORT, OFFSET, DESIGN, SUMMER, FLOWOFFSET };
 
         // for sorting based on hc number
         friend inline bool operator<(const std::shared_ptr<HeatingCircuit> & lhs, const std::shared_ptr<HeatingCircuit> & rhs) {
@@ -146,10 +147,13 @@ class Thermostat : public EMSdevice {
     uint8_t ibaBuildingType_      = EMS_VALUE_UINT_NOTSET; // building type: 0 = light, 1 = medium, 2 = heavy
     uint8_t ibaClockOffset_       = EMS_VALUE_UINT_NOTSET; // offset (in sec) to clock, 0xff = -1 s, 0x02 = 2 s
 
-    uint16_t errorNumber_       = EMS_VALUE_USHORT_NOTSET;
-    int8_t   dampedoutdoortemp_ = EMS_VALUE_INT_NOTSET;
-    uint16_t tempsensor1_       = EMS_VALUE_USHORT_NOTSET;
-    uint16_t tempsensor2_       = EMS_VALUE_USHORT_NOTSET;
+    uint16_t errorNumber_        = EMS_VALUE_USHORT_NOTSET;
+    int8_t   dampedoutdoortemp_  = EMS_VALUE_INT_NOTSET;
+    uint16_t tempsensor1_        = EMS_VALUE_USHORT_NOTSET;
+    uint16_t tempsensor2_        = EMS_VALUE_USHORT_NOTSET;
+    int16_t  dampedoutdoortemp2_ = EMS_VALUE_SHORT_NOTSET;
+    uint8_t  floordrystatus_     = EMS_VALUE_UINT_NOTSET;
+    uint8_t  floordrytemp_       = EMS_VALUE_UINT_NOTSET;
 
     uint8_t wwExtra1_   = EMS_VALUE_UINT_NOTSET; // wwExtra active for wwSystem 1
     uint8_t wwExtra2_   = EMS_VALUE_UINT_NOTSET;
@@ -195,6 +199,7 @@ class Thermostat : public EMSdevice {
     static constexpr uint8_t EMS_OFFSET_RC35Set_targetflowtemp     = 14; // target flow temperature
     static constexpr uint8_t EMS_OFFSET_RC35Set_seltemp            = 37; // selected temp
     static constexpr uint8_t EMS_OFFSET_RC35Set_temp_offset        = 6;
+    static constexpr uint8_t EMS_OFFSET_RC35Set_temp_flowoffset    = 24;
     static constexpr uint8_t EMS_OFFSET_RC35Set_temp_design        = 17;
     static constexpr uint8_t EMS_OFFSET_RC35Set_temp_design_floor  = 36;
     static constexpr uint8_t EMS_OFFSET_RC35Set_temp_summer        = 22;
@@ -265,6 +270,9 @@ class Thermostat : public EMSdevice {
     void process_RC300WWmode(std::shared_ptr<const Telegram> telegram);
     void process_RC300WWmode2(std::shared_ptr<const Telegram> telegram);
     void process_RC300WWtemp(std::shared_ptr<const Telegram> telegram);
+    void process_RC300OutdoorTemp(std::shared_ptr<const Telegram> telegram);
+    void process_RC300Settings(std::shared_ptr<const Telegram> telegram);
+    void process_RC300Floordry(std::shared_ptr<const Telegram> telegram);
     void process_JunkersMonitor(std::shared_ptr<const Telegram> telegram);
     void process_JunkersSet(std::shared_ptr<const Telegram> telegram);
     void process_JunkersSet2(std::shared_ptr<const Telegram> telegram);
@@ -299,6 +307,7 @@ class Thermostat : public EMSdevice {
     bool set_manualtemp(const char * value, const int8_t id);
     bool set_remotetemp(const char * value, const int8_t id);
     bool set_roominfluence(const char * value, const int8_t id);
+    bool set_flowtempoffset(const char * value, const int8_t id);
 
     // set functions - these don't use the id/hc, the parameters are ignored
     bool set_wwmode(const char * value, const int8_t id);

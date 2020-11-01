@@ -1,6 +1,6 @@
 /*
  * EMS-ESP - https://github.com/proddy/EMS-ESP
- * Copyright 2019  Paul Derbyshire
+ * Copyright 2020  Paul Derbyshire
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -139,7 +139,7 @@ uint8_t EMSdevice::device_name_2_device_type(const char * topic) {
 // return name of the device type, capitalized
 std::string EMSdevice::device_type_name() const {
     std::string s = device_type_2_device_name(device_type_);
-    s[0] = toupper(s[0]);
+    s[0]          = toupper(s[0]);
     return s;
 }
 
@@ -311,7 +311,7 @@ std::string EMSdevice::telegram_type_name(std::shared_ptr<const Telegram> telegr
     }
 
     for (const auto & tf : telegram_functions_) {
-        if ((tf.telegram_type_id_ == telegram->type_id) && ((telegram->type_id & 0xF0) != 0xF0)) {
+        if ((tf.telegram_type_id_ == telegram->type_id) && (telegram->type_id != 0xFF)) {
             return uuid::read_flash_string(tf.telegram_type_name_);
         }
     }

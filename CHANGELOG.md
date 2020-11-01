@@ -1,11 +1,11 @@
-# EMS-ESP Changelog
+# Changelog
 
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1] 
+## [2.1.0] October 31 2020
 
 ### Added
 - boiler `heatingactivated`, automatic select parameter telegrams for write
@@ -25,8 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - summer, winter modes for the CW400 thermostat
 - new command under system called `report`. http://ems-esp/api?device=system&cmd=report to generate a report log for troubleshooting
 - thermostat error codes
-- Console command `pulbish ha` to also force the creation of the Home Assistant MQTT Discovery topics
-- Heatpump values (dew temperature and relative air humidity)
+- Console command `publish ha` to also force the creation of the Home Assistant MQTT Discovery topics
+- Heat pump values (dew temperature and relative air humidity)
+- Console up key to repeat last command
+- added RC300 floordrying, building, damped temperature 
 
 ### Fixed
 - fix wwontime readback
@@ -37,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix writing to the Junkers FR120 thermostat
 - support for changing summermode
 - added missing `heatingtype` to thermostat data
+- handle incomming ems+ read requests, ignore F7 telegrams with 3byte-id
+- fix month for setting clock from NTP
 
 ### Changed
 - renamed wWCircPumpType to wWChargeType
@@ -94,7 +98,7 @@ First version of v2 with
 - Support for Home Assistant MQTT Discovery (https://www.home-assistant.io/docs/mqtt/discovery/)
 - Can be run standalone as an independent Access Point or join an existing WiFi network
 - Easier first-time configuration via a web Captive Portal
-- Supporting over 70 EMS devices (boilers, thermostats, solar modules, mixing modules, heat pumps, gateways)
+- Supporting over 70 EMS devices (boilers, thermostats, solar modules, mixer modules, heat pumps, gateways)
 
 See README.me for more details.
 

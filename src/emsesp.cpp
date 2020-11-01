@@ -1,6 +1,6 @@
 /*
  * EMS-ESP - https://github.com/proddy/EMS-ESP
- * Copyright 2019  Paul Derbyshire
+ * Copyright 2020  Paul Derbyshire
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,6 +59,7 @@ uint8_t  EMSESP::actual_master_thermostat_ = EMSESP_DEFAULT_MASTER_THERMOSTAT; /
 uint16_t EMSESP::watch_id_                 = WATCH_ID_NONE;                    // for when log is TRACE. 0 means no trace set
 uint8_t  EMSESP::watch_                    = 0;                                // trace off
 uint16_t EMSESP::read_id_                  = WATCH_ID_NONE;
+bool     EMSESP::read_next_                = false;
 uint16_t EMSESP::publish_id_               = 0;
 bool     EMSESP::tap_water_active_         = false; // for when Boiler states we having running warm water. used in Shower()
 uint32_t EMSESP::last_fetch_               = 0;
@@ -81,7 +82,8 @@ void EMSESP::fetch_device_values(const uint8_t device_id) {
 
 // clears list of recognized devices
 void EMSESP::clear_all_devices() {
-    emsdevices.clear(); // or use empty to release memory too
+    // emsdevices.clear(); // or use empty to release memory too
+    emsdevices.empty();
 }
 
 // return number of devices of a known type
@@ -389,6 +391,7 @@ std::string EMSESP::pretty_telegram(std::shared_ptr<const Telegram> telegram) {
     std::string src_name;
     std::string dest_name;
     std::string type_name;
+    std::string direction;
     for (const auto & emsdevice : emsdevices) {
         if (emsdevice) {
             // get src & dest
@@ -423,13 +426,20 @@ std::string EMSESP::pretty_telegram(std::shared_ptr<const Telegram> telegram) {
         type_name = read_flash_string(F("?"));
     }
 
+    if (telegram->dest & 0x80) {
+        direction = read_flash_string(F("<-"));
+    } else {
+        direction = read_flash_string(F("->"));
+    }
+
     std::string str(200, '\0');
     if (offset) {
         snprintf_P(&str[0],
                    str.capacity() + 1,
-                   PSTR("%s(0x%02X) -> %s(0x%02X), %s(0x%02X), data: %s (offset %d)"),
+                   PSTR("%s(0x%02X) %s %s(0x%02X), %s(0x%02X), data: %s (offset %d)"),
                    src_name.c_str(),
                    src,
+                   direction.c_str(),
                    dest_name.c_str(),
                    dest,
                    type_name.c_str(),
@@ -439,9 +449,10 @@ std::string EMSESP::pretty_telegram(std::shared_ptr<const Telegram> telegram) {
     } else {
         snprintf_P(&str[0],
                    str.capacity() + 1,
-                   PSTR("%s(0x%02X) -> %s(0x%02X), %s(0x%02X), data: %s"),
+                   PSTR("%s(0x%02X) %s %s(0x%02X), %s(0x%02X), data: %s"),
                    src_name.c_str(),
                    src,
+                   direction.c_str(),
                    dest_name.c_str(),
                    dest,
                    type_name.c_str(),
@@ -538,7 +549,10 @@ bool EMSESP::process_telegram(std::shared_ptr<const Telegram> telegram) {
     if (telegram->type_id == read_id_) {
         LOG_NOTICE(pretty_telegram(telegram).c_str());
         publish_response(telegram);
-        read_id_ = WATCH_ID_NONE;
+        if (!read_next_) {
+            read_id_ = WATCH_ID_NONE;
+        }
+        read_next_ = false;
     } else if (watch() == WATCH_ON) {
         if ((watch_id_ == WATCH_ID_NONE) || (telegram->type_id == watch_id_)
             || ((watch_id_ < 0x80) && ((telegram->src == watch_id_) || (telegram->dest == watch_id_)))) {
@@ -824,6 +838,7 @@ void EMSESP::incoming_telegram(uint8_t * data, const uint8_t length) {
                 // if telegram is longer read next part with offset + 25 for ems+
                 if (length == 32) {
                     txservice_.read_next_tx();
+                    read_next_ = true;
                 }
             }
         }

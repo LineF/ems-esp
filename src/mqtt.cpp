@@ -1,6 +1,6 @@
 /*
  * EMS-ESP - https://github.com/proddy/EMS-ESP
- * Copyright 2019  Paul Derbyshire
+ * Copyright 2020  Paul Derbyshire
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -796,9 +796,9 @@ void Mqtt::register_mqtt_ha_sensor(const char *                prefix,
     // name
     char new_name[50];
     if (prefix != nullptr) {
-        snprintf_P(new_name, sizeof(new_name), PSTR("%s %s %s"), device_name.c_str(), prefix, name);
+        snprintf_P(new_name, sizeof(new_name), PSTR("%s %s %s"), device_name.c_str(), prefix, uuid::read_flash_string(name).c_str());
     } else {
-        snprintf_P(new_name, sizeof(new_name), PSTR("%s %s"), device_name.c_str(), name);
+        snprintf_P(new_name, sizeof(new_name), PSTR("%s %s"), device_name.c_str(), uuid::read_flash_string(name).c_str());
     }
     new_name[0] = toupper(new_name[0]); // capitalize first letter
 

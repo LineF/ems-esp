@@ -1,6 +1,6 @@
 /*
  * EMS-ESP - https://github.com/proddy/EMS-ESP
- * Copyright 2019  Paul Derbyshire
+ * Copyright 2020  Paul Derbyshire
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -764,7 +764,6 @@ void Boiler::check_active() {
         Mqtt::publish(F("tapwater_active"), Helpers::render_boolean(s, b));
         EMSESP::tap_water_active(b); // let EMS-ESP know, used in the Shower class
     }
-
 }
 
 // 0x33
@@ -898,7 +897,7 @@ void Boiler::process_UBAMonitorSlow(std::shared_ptr<const Telegram> telegram) {
     changed_ |= telegram->read_value(outdoorTemp_, 0);
     changed_ |= telegram->read_value(boilTemp_, 2);
     changed_ |= telegram->read_value(exhaustTemp_, 4);
-    changed_ |= telegram->read_value(switchTemp_, 25); // only if there is a mixing module present
+    changed_ |= telegram->read_value(switchTemp_, 25); // only if there is a mixer module present
     changed_ |= telegram->read_value(pumpMod_, 9);
     changed_ |= telegram->read_value(burnStarts_, 10, 3);  // force to 3 bytes
     changed_ |= telegram->read_value(burnWorkMin_, 13, 3); // force to 3 bytes

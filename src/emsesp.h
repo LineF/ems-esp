@@ -1,6 +1,6 @@
 /*
  * EMS-ESP - https://github.com/proddy/EMS-ESP
- * Copyright 2019  Paul Derbyshire
+ * Copyright 2020  Paul Derbyshire
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -203,6 +203,7 @@ class EMSESP {
     static uint16_t watch_id_;
     static uint8_t  watch_;
     static uint16_t read_id_;
+    static bool     read_next_;
     static uint16_t publish_id_;
     static bool     tap_water_active_;
     static uint8_t  unique_id_count_;

@@ -1,6 +1,6 @@
 /*
  * EMS-ESP - https://github.com/proddy/EMS-ESP
- * Copyright 2019  Paul Derbyshire
+ * Copyright 2020  Paul Derbyshire
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -239,6 +239,9 @@ MAKE_PSTR(inttemp2, "Temperature sensor 2")
 MAKE_PSTR(intoffset, "Offset int. temperature")
 MAKE_PSTR(minexttemp, "Min ext. temperature")
 MAKE_PSTR(building, "Building")
+MAKE_PSTR(floordry, "Floordrying")
+MAKE_PSTR(floordrytemp, "Floordrying temperature")
+
 MAKE_PSTR(wwmode, "Warm water mode")
 MAKE_PSTR(wwtemp, "Warm water high temperature")
 MAKE_PSTR(wwtemplow, "Warm water low temperature")
@@ -262,6 +265,7 @@ MAKE_PSTR(designtemp, "Design temperature")
 MAKE_PSTR(summertemp, "Summer temperature")
 MAKE_PSTR(summermode, "Summer mode")
 MAKE_PSTR(roominfluence, "Room influence")
+MAKE_PSTR(flowtempoffset, "Flow temperature offset")
 MAKE_PSTR(mode, "Mode")
 MAKE_PSTR(modetype, "Mode type")
 
