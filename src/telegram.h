@@ -74,6 +74,7 @@ class Telegram {
     enum Operation : uint8_t {
         NONE = 0,
         RX,
+        RX_READ,
         TX_RAW,
         TX_READ,
         TX_WRITE,
@@ -384,7 +385,7 @@ class TxService : public EMSbus {
 
     void send_telegram(const QueuedTxTelegram & tx_telegram);
     void send_telegram(const uint8_t * data, const uint8_t length);
-}; // namespace emsesp
+};
 
 } // namespace emsesp
 

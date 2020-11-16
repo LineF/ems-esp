@@ -62,7 +62,7 @@ void Mixer::device_info_web(JsonArray & root) {
     }
 
     // fetch the values into a JSON document
-    StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> doc;
+    StaticJsonDocument<EMSESP_MAX_JSON_SIZE_SMALL> doc;
     JsonObject                                      json = doc.to<JsonObject>();
     if (!export_values_format(Mqtt::Format::SINGLE, json)) {
         return; // empty
@@ -101,7 +101,7 @@ void Mixer::show_values(uuid::console::Shell & shell) {
     }
 
     // fetch the values into a JSON document
-    StaticJsonDocument<EMSESP_MAX_JSON_SIZE_MEDIUM> doc;
+    StaticJsonDocument<EMSESP_MAX_JSON_SIZE_SMALL> doc;
     JsonObject                                      json = doc.to<JsonObject>();
     if (!export_values_format(Mqtt::Format::SINGLE, json)) {
         return; // empty
@@ -128,13 +128,16 @@ void Mixer::show_values(uuid::console::Shell & shell) {
 void Mixer::publish_values(JsonObject & json, bool force) {
     // handle HA first
     if (Mqtt::mqtt_format() == Mqtt::Format::HA) {
-        register_mqtt_ha_config(force);
+        if (!mqtt_ha_config_ || force) {
+            register_mqtt_ha_config();
+            return;
+        }
     }
 
     if (Mqtt::mqtt_format() == Mqtt::Format::SINGLE) {
         StaticJsonDocument<EMSESP_MAX_JSON_SIZE_SMALL> doc;
-        JsonObject                                     json = doc.to<JsonObject>();
-        if (export_values_format(Mqtt::mqtt_format(), json)) {
+        JsonObject                                     json_data = doc.to<JsonObject>();
+        if (export_values_format(Mqtt::mqtt_format(), json_data)) {
             char topic[30];
             if (type() == Type::HC) {
                 snprintf_P(topic, 30, PSTR("mixer_data_hc%d"), hc_);
@@ -150,18 +153,13 @@ void Mixer::publish_values(JsonObject & json, bool force) {
 }
 
 // publish config topic for HA MQTT Discovery
-void Mixer::register_mqtt_ha_config(bool force) {
-    if ((mqtt_ha_config_ && !force)) {
-        return;
-    }
-
+void Mixer::register_mqtt_ha_config() {
     if (!Mqtt::connected()) {
         return;
     }
 
     // if we don't have valid values for this HC don't add it ever again
-    if (!Helpers::hasValue(status_)) {
-        mqtt_ha_config_ = true;
+    if (!Helpers::hasValue(pumpStatus_)) {
         return;
     }
 
@@ -194,7 +192,7 @@ void Mixer::register_mqtt_ha_config(bool force) {
 
     std::string topic(100, '\0');
     if (this->type() == Type::HC) {
-        snprintf_P(&topic[0], topic.capacity() + 1, PSTR("homeassistant/climate/ems-esp/mixer_hc%d/config"), hc_);
+        snprintf_P(&topic[0], topic.capacity() + 1, PSTR("homeassistant/sensor/ems-esp/mixer_hc%d/config"), hc_);
         Mqtt::publish_retain(topic, doc.as<JsonObject>(), true); // publish the config payload with retain flag
         char hc_name[10];
         snprintf_P(hc_name, sizeof(hc_name), PSTR("hc%d"), hc_);
@@ -204,7 +202,7 @@ void Mixer::register_mqtt_ha_config(bool force) {
         Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(valveStatus), this->device_type(), "valveStatus", nullptr, nullptr);
     } else {
         // WWC
-        snprintf_P(&topic[0], topic.capacity() + 1, PSTR("homeassistant/climate/ems-esp/mixer_wwc%d/config"), hc_);
+        snprintf_P(&topic[0], topic.capacity() + 1, PSTR("homeassistant/sensor/ems-esp/mixer_wwc%d/config"), hc_);
         Mqtt::publish_retain(topic, doc.as<JsonObject>(), true); // publish the config payload with retain flag
         char wwc_name[10];
         snprintf_P(wwc_name, sizeof(wwc_name), PSTR("wwc%d"), hc_);
@@ -224,7 +222,7 @@ bool Mixer::export_values(JsonObject & json) {
 // returns false if empty
 bool Mixer::export_values_format(uint8_t mqtt_format, JsonObject & json) {
     // check if there is data for the mixer unit
-    if (!Helpers::hasValue(status_)) {
+    if (this->type() == Type::NONE) {
         return 0;
     }
 
@@ -249,7 +247,7 @@ bool Mixer::export_values_format(uint8_t mqtt_format, JsonObject & json) {
             json_hc["flowSetTemp"] = flowSetTemp_;
         }
         if (Helpers::hasValue(pumpStatus_)) {
-            char s[5];
+            char s[7];
             json_hc["pumpStatus"] = Helpers::render_value(s, pumpStatus_, EMS_VALUE_BOOL);
         }
         if (Helpers::hasValue(status_)) {
@@ -274,7 +272,7 @@ bool Mixer::export_values_format(uint8_t mqtt_format, JsonObject & json) {
         json_hc["wwTemp"] = (float)flowTemp_ / 10;
     }
     if (Helpers::hasValue(pumpStatus_)) {
-        char s[5];
+        char s[7];
         json_hc["pumpStatus"] = Helpers::render_value(s, pumpStatus_, EMS_VALUE_BOOL);
     }
     if (Helpers::hasValue(status_)) {
@@ -316,7 +314,7 @@ void Mixer::process_IPMStatusMessage(std::shared_ptr<const Telegram> telegram) {
 
     // check if circuit is active, 0-off, 1-unmixed, 2-mixed
     uint8_t ismixed = 0;
-    changed_ |= telegram->read_value(ismixed, 0);
+    telegram->read_value(ismixed, 0);
     if (ismixed == 0) {
         return;
     }
