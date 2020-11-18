@@ -88,7 +88,26 @@ class Thermostat : public EMSdevice {
         uint8_t get_mode(uint8_t flags) const;
         uint8_t get_mode_type(uint8_t flags) const;
 
-        enum Mode : uint8_t { UNKNOWN, OFF, MANUAL, AUTO, DAY, NIGHT, HEAT, NOFROST, ECO, HOLIDAY, COMFORT, OFFSET, DESIGN, SUMMER, FLOWOFFSET, MINFLOW, MAXFLOW, ROOMINFLUENCE };
+        enum Mode : uint8_t {
+            UNKNOWN,
+            OFF,
+            MANUAL,
+            AUTO,
+            DAY,
+            NIGHT,
+            HEAT,
+            NOFROST,
+            ECO,
+            HOLIDAY,
+            COMFORT,
+            OFFSET,
+            DESIGN,
+            SUMMER,
+            FLOWOFFSET,
+            MINFLOW,
+            MAXFLOW,
+            ROOMINFLUENCE
+        };
 
         // for sorting based on hc number
         friend inline bool operator<(const std::shared_ptr<HeatingCircuit> & lhs, const std::shared_ptr<HeatingCircuit> & rhs) {
@@ -151,6 +170,7 @@ class Thermostat : public EMSdevice {
     uint8_t ibaClockOffset_       = EMS_VALUE_UINT_NOTSET; // offset (in sec) to clock, 0xff = -1 s, 0x02 = 2 s
 
     uint16_t errorNumber_        = EMS_VALUE_USHORT_NOTSET;
+    char     lastCode_[30]       = {'\0'};
     int8_t   dampedoutdoortemp_  = EMS_VALUE_INT_NOTSET;
     uint16_t tempsensor1_        = EMS_VALUE_USHORT_NOTSET;
     uint16_t tempsensor2_        = EMS_VALUE_USHORT_NOTSET;
@@ -161,6 +181,7 @@ class Thermostat : public EMSdevice {
     uint8_t wwExtra1_   = EMS_VALUE_UINT_NOTSET; // wwExtra active for wwSystem 1
     uint8_t wwExtra2_   = EMS_VALUE_UINT_NOTSET;
     uint8_t wwMode_     = EMS_VALUE_UINT_NOTSET;
+    uint8_t wwCircPump_ = EMS_VALUE_UINT_NOTSET;
     uint8_t wwCircMode_ = EMS_VALUE_UINT_NOTSET;
     uint8_t wwTemp_     = EMS_VALUE_UINT_NOTSET;
     uint8_t wwTempLow_  = EMS_VALUE_UINT_NOTSET;
@@ -255,6 +276,7 @@ class Thermostat : public EMSdevice {
     void process_IBASettings(std::shared_ptr<const Telegram> telegram);
     void process_RCTime(std::shared_ptr<const Telegram> telegram);
     void process_RCError(std::shared_ptr<const Telegram> telegram);
+    void process_RCErrorMessage(std::shared_ptr<const Telegram> telegram);
     void process_RC35wwSettings(std::shared_ptr<const Telegram> telegram);
     void process_RC35Monitor(std::shared_ptr<const Telegram> telegram);
     void process_RC35Set(std::shared_ptr<const Telegram> telegram);

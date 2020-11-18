@@ -36,7 +36,7 @@
 #define EMSESP_DEFAULT_SHOWER_ALERT false
 #define EMSESP_DEFAULT_HIDE_LED false
 #define EMSESP_DEFAULT_DALLAS_PARASITE false
-#define EMSESP_DEFAULT_API_ENABLED true
+#define EMSESP_DEFAULT_API_ENABLED false // turn off, because its insecure
 #define EMSESP_DEFAULT_BOOL_FORMAT 1 // on/off
 #define EMSESP_DEFAULT_ANALOG_ENABLED false
 
@@ -84,6 +84,33 @@ class WebSettings {
 
     static void              read(WebSettings & settings, JsonObject & root);
     static StateUpdateResult update(JsonObject & root, WebSettings & settings);
+
+    enum ChangeFlags : uint8_t {
+
+        NONE   = 0,
+        UART   = (1 << 0),
+        SYSLOG = (1 << 1),
+        OTHER  = (1 << 2),
+        DALLAS = (1 << 3),
+        SHOWER = (1 << 4),
+        LED    = (1 << 5)
+
+    };
+
+    static void add_flags(uint8_t flags) {
+        flags_ |= flags;
+    }
+
+    static bool has_flags(uint8_t flags) {
+        return (flags_ & flags) == flags;
+    }
+
+    static void reset_flags() {
+        flags_ = ChangeFlags::NONE;
+    }
+
+  private:
+    static uint8_t flags_;
 };
 
 class WebSettingsService : public StatefulService<WebSettings> {

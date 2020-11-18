@@ -220,11 +220,11 @@ void Shell::loop_normal() {
                 line_buffer_.clear();
                 cursor_ = 0;
             } else if (c == 'C') { // cursor  right
-                if (cursor_)  {
+                if (cursor_) {
                     cursor_--;
                 }
             } else if (c == 'D') { // cursor left
-                 if (cursor_ < line_buffer_.length()) {
+                if (cursor_ < line_buffer_.length()) {
                     cursor_++;
                 }
             } else if (c == 'H') { // Home
@@ -236,7 +236,7 @@ void Shell::loop_normal() {
                 esc_ = 11 + c - 'P';
             }
             if (c == '~' || (c >= 'P' && c <= 'Z')) { // function keys with number ESCn~
-                if ((esc_ == 3)  && cursor_) { // del
+                if ((esc_ == 3) && cursor_) {         // del
                     cursor_--;
                     line_buffer_.erase(line_buffer_.length() - cursor_ - 1, 1);
                 } else if (esc_ == 4) { // end
@@ -262,10 +262,10 @@ void Shell::loop_normal() {
                 } else if (esc_ == 20) { // F9
                     set_command_str(F("call system info"));
                 } else if (esc_ == 21) { // F10
-                    set_command_str(F("call system report"));
+                    set_command_str(F("call system settings"));
                 } else if (esc_ == 23) { // F11
-                    line_buffer_ = read_flash_string(F("send telegram \"0B \""));
-                    cursor_ = 1;
+                    line_buffer_ = read_flash_string(F("call send \"0B \""));
+                    cursor_      = 1;
                 } else if (esc_ == 24) { // F12
                     set_command_str(F("log debug; watch raw"));
                 }
@@ -275,7 +275,7 @@ void Shell::loop_normal() {
             } else if ((c != '[') && (c != 'O')) { // all other chars except start of sequence
                 esc_ = 0;
             }
-        // process normal ascii text
+            // process normal ascii text
         } else if (c >= '\x20' && c <= '\x7E') {
             if (line_buffer_.length() < maximum_command_line_length_) {
                 line_buffer_.insert(line_buffer_.length() - cursor_, 1, c);
@@ -395,9 +395,9 @@ void Shell::loop_delay() {
 
         function_copy(*this);
 
-        if (running()) {
-            display_prompt();
-        }
+        // if (running()) {
+        //     display_prompt();
+        // }
 
         idle_time_ = uuid::get_uptime_ms();
     }
@@ -425,9 +425,9 @@ void Shell::loop_blocking() {
             stop();
         }
 
-        if (running()) {
-            display_prompt();
-        }
+        // if (running()) {
+        //     display_prompt();
+        // }
 
         idle_time_ = uuid::get_uptime_ms();
     }
@@ -467,8 +467,8 @@ void Shell::delete_buffer_word(bool display) {
     } else {
         if (display) {
             size_t pos1 = 0;
-            pos = 0;
-            while (pos1 <  line_buffer_.length() - cursor_) {
+            pos         = 0;
+            while (pos1 < line_buffer_.length() - cursor_) {
                 pos  = pos1;
                 pos1 = line_buffer_.find(' ', pos + 1);
             }
@@ -496,13 +496,13 @@ void Shell::maximum_command_line_length(size_t length) {
 void Shell::process_command() {
     if (line_buffer_.empty()) {
         println();
-	return;
+        return;
     }
     line_old_ = line_buffer_;
     while (!line_buffer_.empty()) {
         size_t      pos = line_buffer_.find(';');
         std::string line1;
-        if (pos <  line_buffer_.length()) {
+        if (pos < line_buffer_.length()) {
             line1 = line_buffer_.substr(0, pos);
             line_buffer_.erase(0, pos + 1);
         } else {
@@ -568,15 +568,15 @@ void Shell::process_password(bool completed) {
     function_copy(*this, completed, line_buffer_);
     line_buffer_.clear();
 
-    if (running()) {
-        display_prompt();
-    }
+    // if (running()) {
+    //     display_prompt();
+    // }
 }
 
 void Shell::invoke_command(const std::string & line) {
     erase_current_line();
     prompt_displayed_ = false;
-    line_buffer_ = line;
+    line_buffer_      = line;
     display_prompt();
     process_command();
 }
