@@ -42,7 +42,7 @@ Thermostat::Thermostat(uint8_t device_type, uint8_t device_id, uint8_t product_i
             && ((actual_master_thermostat == EMSESP_DEFAULT_MASTER_THERMOSTAT) || (device_id < actual_master_thermostat)))) {
         EMSESP::actual_master_thermostat(device_id);
         actual_master_thermostat = device_id;
-        this->reserve_mem(25); // reserve some space for the telegram registries, to avoid memory fragmentation
+        reserve_mem(25); // reserve some space for the telegram registries, to avoid memory fragmentation
 
         // common telegram handlers
         register_telegram_type(EMS_TYPE_RCOutdoorTemp, F("RCOutdoorTemp"), false, [&](std::shared_ptr<const Telegram> t) { process_RCOutdoorTemp(t); });
@@ -67,6 +67,7 @@ Thermostat::Thermostat(uint8_t device_type, uint8_t device_id, uint8_t product_i
         for (uint8_t i = 0; i < monitor_typeids.size(); i++) {
             register_telegram_type(monitor_typeids[i], F("RC35Monitor"), false, [&](std::shared_ptr<const Telegram> t) { process_RC35Monitor(t); });
             register_telegram_type(set_typeids[i], F("RC35Set"), false, [&](std::shared_ptr<const Telegram> t) { process_RC35Set(t); });
+            register_telegram_type(timer_typeids[i], F("RC35Timer"), false, [&](std::shared_ptr<const Telegram> t) { process_RC35Timer(t); });
         }
         register_telegram_type(EMS_TYPE_IBASettings, F("IBASettings"), true, [&](std::shared_ptr<const Telegram> t) { process_IBASettings(t); });
         register_telegram_type(EMS_TYPE_wwSettings, F("WWSettings"), true, [&](std::shared_ptr<const Telegram> t) { process_RC35wwSettings(t); });
@@ -137,7 +138,7 @@ Thermostat::Thermostat(uint8_t device_type, uint8_t device_id, uint8_t product_i
             register_telegram_type(monitor_typeids[i], F("JunkersMonitor"), false, [&](std::shared_ptr<const Telegram> t) { process_JunkersMonitor(t); });
         }
 
-        if (this->has_flags(EMS_DEVICE_FLAG_JUNKERS_2)) {
+        if (has_flags(EMS_DEVICE_FLAG_JUNKERS_OLD)) {
             // FR120, FR100
             set_typeids = {0x0179, 0x017A, 0x017B, 0x017C};
             for (uint8_t i = 0; i < monitor_typeids.size(); i++) {
@@ -167,81 +168,92 @@ Thermostat::Thermostat(uint8_t device_type, uint8_t device_id, uint8_t product_i
         EMSESP::send_read_request(monitor_typeids[i], device_id);
     }
 
+    /* do not flood tx-queue now, these values are fetched later by toggle fetch
+
     for (uint8_t i = 0; i < set_typeids.size(); i++) {
         EMSESP::send_read_request(set_typeids[i], device_id);
     }
-
     for (uint8_t i = 0; i < summer_typeids.size(); i++) {
         EMSESP::send_read_request(summer_typeids[i], device_id);
     }
     for (uint8_t i = 0; i < curve_typeids.size(); i++) {
         EMSESP::send_read_request(curve_typeids[i], device_id);
     }
+    for (uint8_t i = 0; i < timer_typeids.size(); i++) {
+        EMSESP::send_read_request(timer_typeids[i], device_id);
+    }
+    */
     EMSESP::send_read_request(0x12, device_id); // read last error (only published on errors)
 }
 
 // prepare data for Web UI
-void Thermostat::device_info_web(JsonArray & root) {
+void Thermostat::device_info_web(JsonArray & root, uint8_t & part) {
     StaticJsonDocument<EMSESP_MAX_JSON_SIZE_LARGE> doc;
-    JsonObject                                     json_main = doc.to<JsonObject>();
-    if (export_values_main(json_main)) {
-        print_value_json(root, F("time"), nullptr, F_(time), nullptr, json_main);
-        print_value_json(root, F("errorcode"), nullptr, F_(error), nullptr, json_main);
-        print_value_json(root, F("lastcode"), nullptr, F_(lastCode), nullptr, json_main);
-        print_value_json(root, F("display"), nullptr, F_(display), nullptr, json_main);
-        print_value_json(root, F("language"), nullptr, F_(language), nullptr, json_main);
-        print_value_json(root, F("offsetclock"), nullptr, F_(offsetclock), nullptr, json_main);
-        print_value_json(root, F("dampedtemp"), nullptr, F_(dampedtemp), F_(degrees), json_main);
-        print_value_json(root, F("inttemp1"), nullptr, F_(inttemp1), F_(degrees), json_main);
-        print_value_json(root, F("inttemp2"), nullptr, F_(inttemp2), F_(degrees), json_main);
-        print_value_json(root, F("intoffset"), nullptr, F_(intoffset), nullptr, json_main);
-        print_value_json(root, F("minexttemp"), nullptr, F_(minexttemp), F_(degrees), json_main);
-        print_value_json(root, F("building"), nullptr, F_(building), nullptr, json_main);
-        print_value_json(root, F("floordry"), nullptr, F_(floordry), nullptr, json_main);
-        print_value_json(root, F("floordrytemp"), nullptr, F_(floordrytemp), F_(degrees), json_main);
-        print_value_json(root, F("wwmode"), nullptr, F_(wwmode), nullptr, json_main);
-        print_value_json(root, F("wwtemp"), nullptr, F_(wwtemp), nullptr, json_main);
-        print_value_json(root, F("wwtemplow"), nullptr, F_(wwtemplow), nullptr, json_main);
-        print_value_json(root, F("wwextra1"), nullptr, F_(wwextra1), nullptr, json_main);
-        print_value_json(root, F("wwcircmode"), nullptr, F_(wwcircmode), nullptr, json_main);
-    }
-    doc.clear();
-    JsonObject json_hc = doc.to<JsonObject>();
+    if (part == 0) {
+        JsonObject json_main = doc.to<JsonObject>();
+        if (export_values_main(json_main)) {
+            create_value_json(root, F("time"), nullptr, F_(time), nullptr, json_main);
+            create_value_json(root, F("errorcode"), nullptr, F_(error), nullptr, json_main);
+            create_value_json(root, F("lastcode"), nullptr, F_(lastCode), nullptr, json_main);
+            create_value_json(root, F("display"), nullptr, F_(display), nullptr, json_main);
+            create_value_json(root, F("language"), nullptr, F_(language), nullptr, json_main);
+            create_value_json(root, F("offsetclock"), nullptr, F_(offsetclock), nullptr, json_main);
+            create_value_json(root, F("dampedtemp"), nullptr, F_(dampedtemp), F_(degrees), json_main);
+            create_value_json(root, F("inttemp1"), nullptr, F_(inttemp1), F_(degrees), json_main);
+            create_value_json(root, F("inttemp2"), nullptr, F_(inttemp2), F_(degrees), json_main);
+            create_value_json(root, F("intoffset"), nullptr, F_(intoffset), nullptr, json_main);
+            create_value_json(root, F("minexttemp"), nullptr, F_(minexttemp), F_(degrees), json_main);
+            create_value_json(root, F("building"), nullptr, F_(building), nullptr, json_main);
+            create_value_json(root, F("floordry"), nullptr, F_(floordry), nullptr, json_main);
+            create_value_json(root, F("floordrytemp"), nullptr, F_(floordrytemp), F_(degrees), json_main);
+            create_value_json(root, F("wwmode"), nullptr, F_(wwmode), nullptr, json_main);
+            create_value_json(root, F("wwtemp"), nullptr, F_(wwtemp), nullptr, json_main);
+            create_value_json(root, F("wwtemplow"), nullptr, F_(wwtemplow), nullptr, json_main);
+            create_value_json(root, F("wwextra1"), nullptr, F_(wwextra1), nullptr, json_main);
+            create_value_json(root, F("wwcircmode"), nullptr, F_(wwcircmode), nullptr, json_main);
+        }
+        part++;
+    } else if (part == 1) {
+       JsonObject json_hc = doc.to<JsonObject>();
+        if (export_values_hc(Mqtt::Format::NESTED, json_hc)) {
+            // display for each active heating circuit
+            for (const auto & hc : heating_circuits_) {
+                if (hc->is_active()) {
+                    char prefix_str[10];
+                    snprintf_P(prefix_str, sizeof(prefix_str), PSTR("hc%d"), hc->hc_num());
+                    JsonObject json = json_hc[prefix_str];
 
-    if (export_values_hc(Mqtt::Format::NESTED, json_hc)) {
-        // display for each active heating circuit
-        for (const auto & hc : heating_circuits_) {
-            if (hc->is_active()) {
-                char prefix_str[10];
-                snprintf_P(prefix_str, sizeof(prefix_str), PSTR("hc%d"), hc->hc_num());
-                JsonObject json = json_hc[prefix_str];
+                    snprintf_P(prefix_str, sizeof(prefix_str), PSTR("(hc %d) "), hc->hc_num());
 
-                snprintf_P(prefix_str, sizeof(prefix_str), PSTR("(hc %d) "), hc->hc_num());
-
-                print_value_json(root, F("seltemp"), FPSTR(prefix_str), F_(seltemp), F_(degrees), json);
-                print_value_json(root, F("currtemp"), FPSTR(prefix_str), F_(currtemp), F_(degrees), json);
-                print_value_json(root, F("heattemp"), FPSTR(prefix_str), F_(heattemp), F_(degrees), json);
-                print_value_json(root, F("comforttemp"), FPSTR(prefix_str), F_(comforttemp), F_(degrees), json);
-                print_value_json(root, F("daytemp"), FPSTR(prefix_str), F_(daytemp), F_(degrees), json);
-                print_value_json(root, F("ecotemp"), FPSTR(prefix_str), F_(ecotemp), F_(degrees), json);
-                print_value_json(root, F("nighttemp"), FPSTR(prefix_str), F_(nighttemp), F_(degrees), json);
-                print_value_json(root, F("manualtemp"), FPSTR(prefix_str), F_(manualtemp), F_(degrees), json);
-                print_value_json(root, F("holidaytemp"), FPSTR(prefix_str), F_(holidaytemp), F_(degrees), json);
-                print_value_json(root, F("nofrosttemp"), FPSTR(prefix_str), F_(nofrosttemp), F_(degrees), json);
-                print_value_json(root, F("heatingtype"), FPSTR(prefix_str), F_(heatingtype), nullptr, json);
-                print_value_json(root, F("targetflowtemp"), FPSTR(prefix_str), F_(targetflowtemp), F_(degrees), json);
-                print_value_json(root, F("offsettemp"), FPSTR(prefix_str), F_(offsettemp), F_(degrees), json);
-                print_value_json(root, F("designtemp"), FPSTR(prefix_str), F_(designtemp), F_(degrees), json);
-                print_value_json(root, F("roominfluence"), FPSTR(prefix_str), F_(roominfluence), F_(degrees), json);
-                print_value_json(root, F("flowtempoffset"), FPSTR(prefix_str), F_(flowtempoffset), F_(degrees), json);
-                print_value_json(root, F("minflowtemp"), FPSTR(prefix_str), F_(minflowtemp), F_(degrees), json);
-                print_value_json(root, F("maxflowtemp"), FPSTR(prefix_str), F_(maxflowtemp), F_(degrees), json);
-                print_value_json(root, F("summertemp"), FPSTR(prefix_str), F_(summertemp), F_(degrees), json);
-                print_value_json(root, F("summermode"), FPSTR(prefix_str), F_(summermode), F_(degrees), json);
-                print_value_json(root, F("mode"), FPSTR(prefix_str), F_(mode), nullptr, json);
-                print_value_json(root, F("modetype"), FPSTR(prefix_str), F_(modetype), nullptr, json);
+                    create_value_json(root, F("seltemp"), FPSTR(prefix_str), F_(seltemp), F_(degrees), json);
+                    create_value_json(root, F("currtemp"), FPSTR(prefix_str), F_(currtemp), F_(degrees), json);
+                    create_value_json(root, F("heattemp"), FPSTR(prefix_str), F_(heattemp), F_(degrees), json);
+                    create_value_json(root, F("comforttemp"), FPSTR(prefix_str), F_(comforttemp), F_(degrees), json);
+                    create_value_json(root, F("daytemp"), FPSTR(prefix_str), F_(daytemp), F_(degrees), json);
+                    create_value_json(root, F("ecotemp"), FPSTR(prefix_str), F_(ecotemp), F_(degrees), json);
+                    create_value_json(root, F("nighttemp"), FPSTR(prefix_str), F_(nighttemp), F_(degrees), json);
+                    create_value_json(root, F("manualtemp"), FPSTR(prefix_str), F_(manualtemp), F_(degrees), json);
+                    create_value_json(root, F("holidaytemp"), FPSTR(prefix_str), F_(holidaytemp), F_(degrees), json);
+                    create_value_json(root, F("nofrosttemp"), FPSTR(prefix_str), F_(nofrosttemp), F_(degrees), json);
+                    create_value_json(root, F("heatingtype"), FPSTR(prefix_str), F_(heatingtype), nullptr, json);
+                    create_value_json(root, F("targetflowtemp"), FPSTR(prefix_str), F_(targetflowtemp), F_(degrees), json);
+                    create_value_json(root, F("offsettemp"), FPSTR(prefix_str), F_(offsettemp), F_(degrees), json);
+                    create_value_json(root, F("designtemp"), FPSTR(prefix_str), F_(designtemp), F_(degrees), json);
+                    create_value_json(root, F("roominfluence"), FPSTR(prefix_str), F_(roominfluence), F_(degrees), json);
+                    create_value_json(root, F("flowtempoffset"), FPSTR(prefix_str), F_(flowtempoffset), F_(degrees), json);
+                    create_value_json(root, F("minflowtemp"), FPSTR(prefix_str), F_(minflowtemp), F_(degrees), json);
+                    create_value_json(root, F("maxflowtemp"), FPSTR(prefix_str), F_(maxflowtemp), F_(degrees), json);
+                    create_value_json(root, F("summertemp"), FPSTR(prefix_str), F_(summertemp), F_(degrees), json);
+                    create_value_json(root, F("summermode"), FPSTR(prefix_str), F_(summermode), F_(degrees), json);
+                    create_value_json(root, F("reducemode"), FPSTR(prefix_str), F_(reducemode), nullptr, json);
+                    create_value_json(root, F("program"), FPSTR(prefix_str), F_(program), nullptr, json);
+                    create_value_json(root, F("controlmode"), FPSTR(prefix_str), F_(controlmode), nullptr, json);
+                    create_value_json(root, F("mode"), FPSTR(prefix_str), F_(mode), nullptr, json);
+                    create_value_json(root, F("modetype"), FPSTR(prefix_str), F_(modetype), nullptr, json);
+                }
             }
         }
+        part = 0; // no more parts
     }
 }
 
@@ -249,7 +261,7 @@ void Thermostat::device_info_web(JsonArray & root) {
 // we check if any of the thermostat values have changed and then republish if necessary
 bool Thermostat::updated_values() {
     // only publish on the master thermostat
-    if (EMSESP::actual_master_thermostat() != this->device_id()) {
+    if (EMSESP::actual_master_thermostat() != device_id()) {
         return false;
     }
     if (changed_) {
@@ -265,78 +277,9 @@ bool Thermostat::export_values(JsonObject & json) {
     return has_value;
 }
 
-// display all thermostat values into the shell console
-void Thermostat::show_values(uuid::console::Shell & shell) {
-    EMSdevice::show_values(shell); // always call this to show header
-
-    StaticJsonDocument<EMSESP_MAX_JSON_SIZE_LARGE> doc;
-    JsonObject                                     json_main = doc.to<JsonObject>();
-    if (export_values_main(json_main)) {
-        print_value_json(shell, F("time"), nullptr, F_(time), nullptr, json_main);
-        print_value_json(shell, F("errorcode"), nullptr, F_(error), nullptr, json_main);
-        print_value_json(shell, F("lastcode"), nullptr, F_(lastCode), nullptr, json_main);
-        print_value_json(shell, F("display"), nullptr, F_(display), nullptr, json_main);
-        print_value_json(shell, F("language"), nullptr, F_(language), nullptr, json_main);
-        print_value_json(shell, F("offsetclock"), nullptr, F_(offsetclock), nullptr, json_main);
-        print_value_json(shell, F("dampedtemp"), nullptr, F_(dampedtemp), F_(degrees), json_main);
-        print_value_json(shell, F("inttemp1"), nullptr, F_(inttemp1), F_(degrees), json_main);
-        print_value_json(shell, F("inttemp2"), nullptr, F_(inttemp2), F_(degrees), json_main);
-        print_value_json(shell, F("intoffset"), nullptr, F_(intoffset), nullptr, json_main);
-        print_value_json(shell, F("minexttemp"), nullptr, F_(minexttemp), F_(degrees), json_main);
-        print_value_json(shell, F("building"), nullptr, F_(building), nullptr, json_main);
-        print_value_json(shell, F("floordry"), nullptr, F_(floordry), nullptr, json_main);
-        print_value_json(shell, F("floordrytemp"), nullptr, F_(floordrytemp), F_(degrees), json_main);
-        print_value_json(shell, F("wwmode"), nullptr, F_(wwmode), nullptr, json_main);
-        print_value_json(shell, F("wwtemp"), nullptr, F_(wwtemp), nullptr, json_main);
-        print_value_json(shell, F("wwtemplow"), nullptr, F_(wwtemplow), nullptr, json_main);
-        print_value_json(shell, F("wwextra1"), nullptr, F_(wwextra1), nullptr, json_main);
-        print_value_json(shell, F("wwcircmode"), nullptr, F_(wwcircmode), nullptr, json_main);
-    }
-
-    doc.clear(); // reuse the doc
-    JsonObject json_hc = doc.to<JsonObject>();
-    // e.g. {"hc1":{"seltemp":849.4,"currtemp":819.2,"mode":"unknown","modetype":"day"},"hc2":{"seltemp":875.1,"currtemp":409.6,"mode":"unknown","modetype":"day"},"hc3":{"seltemp":0,"currtemp":0,"mode":"unknown","modetype":"day"}}
-
-    if (export_values_hc(Mqtt::Format::NESTED, json_hc)) {
-        // display for each active heating circuit
-        for (const auto & hc : heating_circuits_) {
-            if (hc->is_active()) {
-                shell.printfln(F_(hc), hc->hc_num());
-
-                char hc_name[10]; // hc{1-4}
-                snprintf_P(hc_name, sizeof(hc_name), PSTR("hc%d"), hc->hc_num());
-                JsonObject json = json_hc[hc_name];
-
-                print_value_json(shell, F("seltemp"), F_(2spaces), F_(seltemp), F_(degrees), json);
-                print_value_json(shell, F("currtemp"), F_(2spaces), F_(currtemp), F_(degrees), json);
-                print_value_json(shell, F("heattemp"), F_(2spaces), F_(heattemp), F_(degrees), json);
-                print_value_json(shell, F("comforttemp"), F_(2spaces), F_(comforttemp), F_(degrees), json);
-                print_value_json(shell, F("daytemp"), F_(2spaces), F_(daytemp), F_(degrees), json);
-                print_value_json(shell, F("ecotemp"), F_(2spaces), F_(ecotemp), F_(degrees), json);
-                print_value_json(shell, F("nighttemp"), F_(2spaces), F_(nighttemp), F_(degrees), json);
-                print_value_json(shell, F("manualtemp"), F_(2spaces), F_(manualtemp), F_(degrees), json);
-                print_value_json(shell, F("holidaytemp"), F_(2spaces), F_(holidaytemp), F_(degrees), json);
-                print_value_json(shell, F("nofrosttemp"), F_(2spaces), F_(nofrosttemp), F_(degrees), json);
-                print_value_json(shell, F("targetflowtemp"), F_(2spaces), F_(targetflowtemp), F_(degrees), json);
-                print_value_json(shell, F("offsettemp"), F_(2spaces), F_(offsettemp), F_(degrees), json);
-                print_value_json(shell, F("designtemp"), F_(2spaces), F_(designtemp), F_(degrees), json);
-                print_value_json(shell, F("roominfluence"), F_(2spaces), F_(roominfluence), F_(degrees), json);
-                print_value_json(shell, F("flowtempoffset"), F_(2spaces), F_(flowtempoffset), F_(degrees), json);
-                print_value_json(shell, F("minflowtemp"), F_(2spaces), F_(minflowtemp), F_(degrees), json);
-                print_value_json(shell, F("maxflowtemp"), F_(2spaces), F_(maxflowtemp), F_(degrees), json);
-                print_value_json(shell, F("summertemp"), F_(2spaces), F_(summertemp), F_(degrees), json);
-                print_value_json(shell, F("summermode"), F_(2spaces), F_(summermode), F_(degrees), json);
-                print_value_json(shell, F("mode"), F_(2spaces), F_(mode), nullptr, json);
-                print_value_json(shell, F("modetype"), F_(2spaces), F_(modetype), nullptr, json);
-            }
-        }
-    }
-    shell.println();
-}
-
 // publish values via MQTT
 void Thermostat::publish_values(JsonObject & json, bool force) {
-    if (EMSESP::actual_master_thermostat() != this->device_id()) {
+    if (EMSESP::actual_master_thermostat() != device_id()) {
         return;
     }
 
@@ -353,7 +296,7 @@ void Thermostat::publish_values(JsonObject & json, bool force) {
         return;
     }
 
-    // see if we have already registered this with HA MQTT Discovery, if not send the config
+    // see if we have already registered this with HA MQTT Discovery, if not send the config first
     if (Mqtt::mqtt_format() == Mqtt::Format::HA) {
         if (!ha_config(force)) {
             return;
@@ -394,36 +337,36 @@ bool Thermostat::export_values_main(JsonObject & rootThermostat) {
         // Display
         if (Helpers::hasValue(ibaMainDisplay_)) {
             if (ibaMainDisplay_ == 0) {
-                rootThermostat["display"] = F("internal temperature");
+                rootThermostat["display"] = FJSON("internal temperature");
             } else if (ibaMainDisplay_ == 1) {
-                rootThermostat["display"] = F("internal setpoint");
+                rootThermostat["display"] = FJSON("internal setpoint");
             } else if (ibaMainDisplay_ == 2) {
-                rootThermostat["display"] = F("external temperature");
+                rootThermostat["display"] = FJSON("external temperature");
             } else if (ibaMainDisplay_ == 3) {
-                rootThermostat["display"] = F("burner temperature");
+                rootThermostat["display"] = FJSON("burner temperature");
             } else if (ibaMainDisplay_ == 4) {
-                rootThermostat["display"] = F("WW temperature");
+                rootThermostat["display"] = FJSON("WW temperature");
             } else if (ibaMainDisplay_ == 5) {
-                rootThermostat["display"] = F("functioning mode");
+                rootThermostat["display"] = FJSON("functioning mode");
             } else if (ibaMainDisplay_ == 6) {
-                rootThermostat["display"] = F("time");
+                rootThermostat["display"] = FJSON("time");
             } else if (ibaMainDisplay_ == 7) {
-                rootThermostat["display"] = F("date");
+                rootThermostat["display"] = FJSON("date");
             } else if (ibaMainDisplay_ == 8) {
-                rootThermostat["display"] = F("smoke temperature");
+                rootThermostat["display"] = FJSON("smoke temperature");
             }
         }
 
         // Language
         if (Helpers::hasValue(ibaLanguage_)) {
             if (ibaLanguage_ == 0) {
-                rootThermostat["language"] = F("German");
+                rootThermostat["language"] = FJSON("German");
             } else if (ibaLanguage_ == 1) {
-                rootThermostat["language"] = F("Dutch");
+                rootThermostat["language"] = FJSON("Dutch");
             } else if (ibaLanguage_ == 2) {
-                rootThermostat["language"] = F("French");
+                rootThermostat["language"] = FJSON("French");
             } else if (ibaLanguage_ == 3) {
-                rootThermostat["language"] = F("Italian");
+                rootThermostat["language"] = FJSON("Italian");
             }
         }
 
@@ -435,7 +378,9 @@ bool Thermostat::export_values_main(JsonObject & rootThermostat) {
 
     // Damped outdoor temperature (RC35)
     if (Helpers::hasValue(dampedoutdoortemp_)) {
-        rootThermostat["dampedtemp"] = dampedoutdoortemp_;
+        if (model == EMS_DEVICE_FLAG_RC35 || model == EMS_DEVICE_FLAG_RC30_1) {
+            rootThermostat["dampedtemp"] = dampedoutdoortemp_;
+        }
     }
 
     // Damped outdoor temperature (RC300)
@@ -527,7 +472,7 @@ bool Thermostat::export_values_main(JsonObject & rootThermostat) {
 // if the mqtt_format is 0 then it will not perform the MQTT publish
 // returns false if empty
 bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermostat) {
-    uint8_t    flags = this->model();
+    uint8_t    model = this->model();
     JsonObject dataThermostat;
     bool       has_data = false;
 
@@ -548,10 +493,10 @@ bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermost
             // different logic on how temperature values are stored, depending on model
             uint8_t setpoint_temp_divider;
             uint8_t curr_temp_divider;
-            if (flags == EMS_DEVICE_FLAG_EASY) {
+            if (model == EMS_DEVICE_FLAG_EASY) {
                 setpoint_temp_divider = 100;
                 curr_temp_divider     = 100;
-            } else if (flags == EMS_DEVICE_FLAG_JUNKERS) {
+            } else if (model == EMS_DEVICE_FLAG_JUNKERS) {
                 setpoint_temp_divider = 10;
                 curr_temp_divider     = 10;
             } else {
@@ -569,11 +514,21 @@ bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermost
                 dataThermostat["currtemp"] = Helpers::round2((float)hc->curr_roomTemp / curr_temp_divider);
             }
 
+            if (Mqtt::mqtt_format() == Mqtt::Format::HA) {
+                if (Helpers::hasValue(hc->ha_temp)) {
+                    dataThermostat["hatemp"] = Helpers::round2((float)hc->ha_temp / 10);
+                } else if (Helpers::hasValue(hc->curr_roomTemp)) {
+                    dataThermostat["hatemp"] = Helpers::round2((float)hc->curr_roomTemp / curr_temp_divider);
+                } else {
+                    dataThermostat["hatemp"] = Helpers::round2((float)hc->setpoint_roomTemp / setpoint_temp_divider);
+                }
+            }
+
             if (Helpers::hasValue(hc->daytemp)) {
-                if (flags == EMSdevice::EMS_DEVICE_FLAG_JUNKERS) {
+                if (model == EMSdevice::EMS_DEVICE_FLAG_JUNKERS) {
                     // Heat temperature
                     dataThermostat["heattemp"] = (float)hc->daytemp / 2;
-                } else if (flags == EMSdevice::EMS_DEVICE_FLAG_RC300 || flags == EMSdevice::EMS_DEVICE_FLAG_RC100) {
+                } else if (model == EMSdevice::EMS_DEVICE_FLAG_RC300 || model == EMSdevice::EMS_DEVICE_FLAG_RC100) {
                     // Comfort temperature
                     dataThermostat["comforttemp"] = (float)hc->daytemp / 2;
                 } else {
@@ -583,7 +538,7 @@ bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermost
             }
 
             if (Helpers::hasValue(hc->nighttemp)) {
-                if (flags == EMSdevice::EMS_DEVICE_FLAG_JUNKERS || flags == EMSdevice::EMS_DEVICE_FLAG_RC300 || flags == EMSdevice::EMS_DEVICE_FLAG_RC100) {
+                if (model == EMSdevice::EMS_DEVICE_FLAG_JUNKERS || model == EMSdevice::EMS_DEVICE_FLAG_RC300 || model == EMSdevice::EMS_DEVICE_FLAG_RC100) {
                     // Eco temperature
                     dataThermostat["ecotemp"] = (float)hc->nighttemp / 2;
                 } else {
@@ -604,7 +559,7 @@ bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermost
 
             // Nofrost temperature
             if (Helpers::hasValue(hc->nofrosttemp)) {
-                if (flags == EMSdevice::EMS_DEVICE_FLAG_JUNKERS) {
+                if (model == EMSdevice::EMS_DEVICE_FLAG_JUNKERS) {
                     dataThermostat["nofrosttemp"] = (float)hc->nofrosttemp / 2;
                 } else {
                     dataThermostat["nofrosttemp"] = hc->nofrosttemp;
@@ -613,7 +568,8 @@ bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermost
 
             // Heating Type
             if (Helpers::hasValue(hc->heatingtype)) {
-                dataThermostat["heatingtype"] = hc->heatingtype;
+                char s[10];
+                dataThermostat["heatingtype"] = Helpers::render_enum(s, {F("off"), F("radiator"), F("convector"), F("floor")}, hc->heatingtype);
             }
 
             // Target flow temperature
@@ -623,7 +579,11 @@ bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermost
 
             // Offset temperature
             if (Helpers::hasValue(hc->offsettemp)) {
-                dataThermostat["offsettemp"] = hc->offsettemp / 2;
+                if (model == EMSdevice::EMS_DEVICE_FLAG_RC300 || model == EMSdevice::EMS_DEVICE_FLAG_RC100) {
+                    dataThermostat["offsettemp"] = hc->offsettemp;
+                } else {
+                    dataThermostat["offsettemp"] = hc->offsettemp / 2;
+                }
             }
 
             // Design temperature
@@ -662,9 +622,31 @@ bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermost
                 dataThermostat["summermode"] = Helpers::render_enum(s, {F("summer"), F("auto"), F("winter")}, hc->summer_setmode);
             }
 
+            // Reduce mode
+            if (Helpers::hasValue(hc->reducemode)) {
+                char s[10];
+                dataThermostat["reducemode"] = Helpers::render_enum(s, {F("nofrost"), F("reduce"), F("room"), F("outdoor")}, hc->reducemode);
+            }
+
+            // Control mode room or outdoor
+            if (Helpers::hasValue(hc->controlmode)) {
+                char s[10];
+                if (model == EMS_DEVICE_FLAG_RC35 || model == EMS_DEVICE_FLAG_RC30_1) {
+                    dataThermostat["controlmode"] = Helpers::render_enum(s, {F("outdoor"), F("room")}, hc->controlmode);
+                } else if (model == EMS_DEVICE_FLAG_RC300 || model == EMS_DEVICE_FLAG_RC100) {
+                    dataThermostat["controlmode"] =
+                        Helpers::render_enum(s, {F("off"), F("outdoor"), F("simple"), F("MPC"), F("room"), F("power"), F("const.")}, hc->controlmode);
+                }
+            }
+
+            // program no.
+            if (Helpers::hasValue(hc->program)) {
+                dataThermostat["program"] = hc->program;
+            }
+
             // mode - always force showing this when in HA so not to break HA's climate component
             if ((Helpers::hasValue(hc->mode)) || (mqtt_format == Mqtt::Format::HA)) {
-                uint8_t hc_mode = hc->get_mode(flags);
+                uint8_t hc_mode = hc->get_mode(model);
                 // if we're sending to HA the only valid mode types are heat, auto and off
                 if (mqtt_format == Mqtt::Format::HA) {
                     if ((hc_mode == HeatingCircuit::Mode::MANUAL) || (hc_mode == HeatingCircuit::Mode::DAY)) {
@@ -683,11 +665,11 @@ bool Thermostat::export_values_hc(uint8_t mqtt_format, JsonObject & rootThermost
             // https://github.com/proddy/EMS-ESP/issues/373#issuecomment-619810209
             // Mode Type
             if (Helpers::hasValue(hc->summer_mode) && hc->summer_mode) {
-                dataThermostat["modetype"] = F("summer");
+                dataThermostat["modetype"] = FJSON("summer");
             } else if (Helpers::hasValue(hc->holiday_mode) && hc->holiday_mode) {
-                dataThermostat["modetype"] = F("holiday");
+                dataThermostat["modetype"] = FJSON("holiday");
             } else if (Helpers::hasValue(hc->mode_type)) {
-                dataThermostat["modetype"] = mode_tostring(hc->get_mode_type(flags));
+                dataThermostat["modetype"] = mode_tostring(hc->get_mode_type(model));
             }
 
             // if format is single, send immediately and clear object for next hc
@@ -722,20 +704,18 @@ bool Thermostat::ha_config(bool force) {
     if (!ha_registered()) {
         register_mqtt_ha_config();
         ha_registered(true);
-        return false;
     }
 
     // check to see which heating circuits need to be added as HA climate components
     // but only if it's active and there is a real value for the current room temperature (https://github.com/proddy/EMS-ESP/issues/582)
+    // no check for room temperature, we have fallback ha_temp now.
     for (const auto & hc : heating_circuits_) {
         if (hc->is_active() && !hc->ha_registered()) {
-            if (Helpers::hasValue(hc->curr_roomTemp)) {
-                register_mqtt_ha_config(hc->hc_num());
-            }
+            register_mqtt_ha_config(hc->hc_num());
             hc->ha_registered(true);
-            return false;
         }
     }
+
     return true;
 }
 
@@ -847,6 +827,15 @@ std::shared_ptr<Thermostat::HeatingCircuit> Thermostat::heating_circuit(std::sha
     if (set_typeids.size()) {
         toggle_fetch(set_typeids[hc_num - 1], toggle_);
     }
+    if (summer_typeids.size()) {
+        toggle_fetch(summer_typeids[hc_num - 1], toggle_);
+    }
+    if (curve_typeids.size()) {
+        toggle_fetch(curve_typeids[hc_num - 1], toggle_);
+    }
+    if (timer_typeids.size()) {
+        toggle_fetch(timer_typeids[hc_num - 1], toggle_);
+    }
 
     return heating_circuits_.back(); // even after sorting, this should still point back to the newly created HC
 }
@@ -855,52 +844,52 @@ std::shared_ptr<Thermostat::HeatingCircuit> Thermostat::heating_circuit(std::sha
 // homeassistant/sensor/ems-esp/thermostat/config
 void Thermostat::register_mqtt_ha_config() {
     StaticJsonDocument<EMSESP_MAX_JSON_SIZE_HA_CONFIG> doc;
-    doc["uniq_id"] = F("thermostat");
-    doc["ic"]      = F("mdi:home-thermometer-outline");
+    doc["uniq_id"] = FJSON("thermostat");
+    doc["ic"]      = FJSON("mdi:home-thermometer-outline");
 
     char stat_t[50];
     snprintf_P(stat_t, sizeof(stat_t), PSTR("%s/thermostat_data"), System::hostname().c_str());
     doc["stat_t"] = stat_t;
 
-    doc["name"]    = F("Thermostat Status");
-    doc["val_tpl"] = F("{{value_json.errorcode}}"); // default value - must have one, so we use errorcode
+    doc["name"]    = FJSON("Thermostat Status");
+    doc["val_tpl"] = FJSON("{{value_json.errorcode}}"); // default value - must have one, so we use errorcode
     JsonObject dev = doc.createNestedObject("dev");
-    dev["name"]    = F("EMS-ESP Thermostat");
+    dev["name"]    = FJSON("EMS-ESP Thermostat");
     dev["sw"]      = EMSESP_APP_VERSION;
-    dev["mf"]      = this->brand_to_string();
-    dev["mdl"]     = this->name();
+    dev["mf"]      = brand_to_string();
+    dev["mdl"]     = name();
     JsonArray ids  = dev.createNestedArray("ids");
     ids.add("ems-esp-thermostat");
-    Mqtt::publish_retain(F("homeassistant/sensor/ems-esp/thermostat/config"), doc.as<JsonObject>(), true); // publish the config payload with retain flag
+    Mqtt::publish_ha(F("homeassistant/sensor/ems-esp/thermostat/config"), doc.as<JsonObject>()); // publish the config payload with retain flag
 
-    Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(time), this->device_type(), "time", nullptr, nullptr);
-    Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(error), this->device_type(), "errorcode", nullptr, nullptr);
+    Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(time), device_type(), "time", nullptr, nullptr);
+    Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(error), device_type(), "errorcode", nullptr, nullptr);
 
     uint8_t model = this->model();
 
     if (model == EMS_DEVICE_FLAG_RC30_1) {
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(display), this->device_type(), "display", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(language), this->device_type(), "language", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(display), device_type(), "display", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(language), device_type(), "language", nullptr, nullptr);
     }
 
     if (model == EMS_DEVICE_FLAG_RC300 || model == EMS_DEVICE_FLAG_RC100) {
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(dampedtemp), this->device_type(), "dampedtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(building), this->device_type(), "building", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(minexttemp), this->device_type(), "minexttemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(floordry), this->device_type(), "floordry", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(floordrytemp), this->device_type(), "floordrytemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwmode), this->device_type(), "wwmode", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwtemp), this->device_type(), "wwtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwcircmode), this->device_type(), "wwcircmode", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(dampedtemp), device_type(), "dampedtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(building), device_type(), "building", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(minexttemp), device_type(), "minexttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(floordry), device_type(), "floordry", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(floordrytemp), device_type(), "floordrytemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwmode), device_type(), "wwmode", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwtemp), device_type(), "wwtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwcircmode), device_type(), "wwcircmode", nullptr, nullptr);
     }
 
     if (model == EMS_DEVICE_FLAG_RC35 || model == EMS_DEVICE_FLAG_RC30_1) {
         // excluding inttemp1, inttemp2, intoffset, minexttemp
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(dampedtemp), this->device_type(), "dampedtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(building), this->device_type(), "building", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(minexttemp), this->device_type(), "minexttemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwmode), this->device_type(), "wwmode", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwcircmode), this->device_type(), "wwcircmode", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(dampedtemp), device_type(), "dampedtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(building), device_type(), "building", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(minexttemp), device_type(), "minexttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwmode), device_type(), "wwmode", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(nullptr, nullptr, F_(wwcircmode), device_type(), "wwcircmode", nullptr, nullptr);
     }
 }
 
@@ -924,9 +913,9 @@ void Thermostat::register_mqtt_ha_config(uint8_t hc_num) {
     doc["mode_cmd_t"]  = str3;
     doc["temp_cmd_t"]  = str3;
     doc["~"]           = System::hostname(); // ems-esp
-    doc["mode_stat_t"] = F("~/thermostat_data");
-    doc["temp_stat_t"] = F("~/thermostat_data");
-    doc["curr_temp_t"] = F("~/thermostat_data");
+    doc["mode_stat_t"] = FJSON("~/thermostat_data");
+    doc["temp_stat_t"] = FJSON("~/thermostat_data");
+    doc["curr_temp_t"] = FJSON("~/thermostat_data");
 
     char mode_str[30];
     snprintf_P(mode_str, sizeof(mode_str), PSTR("{{value_json.hc%d.mode}}"), hc_num);
@@ -937,54 +926,32 @@ void Thermostat::register_mqtt_ha_config(uint8_t hc_num) {
     doc["temp_stat_tpl"] = seltemp_str;
 
     char currtemp_str[30];
-    snprintf_P(currtemp_str, sizeof(currtemp_str), PSTR("{{value_json.hc%d.currtemp}}"), hc_num);
+    snprintf_P(currtemp_str, sizeof(currtemp_str), PSTR("{{value_json.hc%d.hatemp}}"), hc_num);
     doc["curr_temp_tpl"] = currtemp_str;
 
-    doc["min_temp"]  = F("5");
-    doc["max_temp"]  = F("30");
-    doc["temp_step"] = F("0.5");
+    doc["min_temp"]  = FJSON("5");
+    doc["max_temp"]  = FJSON("30");
+    doc["temp_step"] = FJSON("0.5");
 
     // the HA climate component only responds to auto, heat and off
-    JsonArray modes = doc.createNestedArray(F("modes"));
-    modes.add(F("auto"));
-    modes.add(F("heat"));
-    modes.add(F("off"));
-
-    /*
-    uint8_t model = this->model();
-    if (model == EMSdevice::EMS_DEVICE_FLAG_RC20_2) {
-        modes.add(F("night"));
-        modes.add(F("day"));
-    } else if ((model == EMSdevice::EMS_DEVICE_FLAG_RC300) || (model == EMSdevice::EMS_DEVICE_FLAG_RC100)) {
-        modes.add(F("eco"));
-        modes.add(F("comfort"));
-        modes.add(F("auto"));
-    } else if (model == EMSdevice::EMS_DEVICE_FLAG_JUNKERS) {
-        modes.add(F("nofrost"));
-        modes.add(F("eco"));
-        modes.add(F("heat"));
-        modes.add(F("auto"));
-    } else { // default for all other thermostats
-        modes.add(F("night"));
-        modes.add(F("day"));
-        modes.add(F("auto"));
-    }
-    */
+    JsonArray modes = doc.createNestedArray("modes");
+    modes.add("auto");
+    modes.add("heat");
+    modes.add("off");
 
     JsonObject dev = doc.createNestedObject("dev");
-    dev["name"]    = F("EMS-ESP Thermostat");
+    dev["name"]    = FJSON("EMS-ESP Thermostat");
     dev["sw"]      = EMSESP_APP_VERSION;
-    dev["mf"]      = this->brand_to_string();
-    dev["mdl"]     = this->name();
+    dev["mf"]      = brand_to_string();
+    dev["mdl"]     = name();
     JsonArray ids  = dev.createNestedArray("ids");
-    ids.add(F("ems-esp-thermostat"));
+    ids.add("ems-esp-thermostat");
 
     std::string topic(100, '\0');
     snprintf_P(&topic[0], topic.capacity() + 1, PSTR("homeassistant/climate/ems-esp/thermostat_hc%d/config"), hc_num);
-    Mqtt::publish_retain(topic, doc.as<JsonObject>(), true); // publish the config payload with retain flag
+    Mqtt::publish_ha(topic, doc.as<JsonObject>()); // publish the config payload with retain flag
 
-    // enable the thermostat topic to take both mode strings and floats
-    // for each of the heating circuits
+    // enable the a special "thermostat_hc<n>" topic to take both mode strings and floats for each of the heating circuits
     std::string topic2(100, '\0');
     snprintf_P(&topic2[0], topic2.capacity() + 1, PSTR("thermostat_hc%d"), hc_num);
     register_mqtt_topic(topic2, [=](const char * m) { return thermostat_ha_cmd(m, hc_num); });
@@ -994,51 +961,57 @@ void Thermostat::register_mqtt_ha_config(uint8_t hc_num) {
     char s[3];
     strlcat(hc_name, Helpers::itoa(s, hc_num), 10);
 
-    Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(mode), this->device_type(), "mode", nullptr, nullptr);
+    Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(mode), device_type(), "mode", nullptr, nullptr);
 
-    Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(seltemp), this->device_type(), "seltemp", F_(degrees), F_(icontemperature));
-    Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(currtemp), this->device_type(), "currtemp", F_(degrees), F_(icontemperature));
+    Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(seltemp), device_type(), "seltemp", F_(degrees), F_(icontemperature));
+    Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(currtemp), device_type(), "hatemp", F_(degrees), F_(icontemperature));
 
-    uint8_t model = this->model();
-    switch (model) {
+    switch (model()) {
     case EMS_DEVICE_FLAG_RC100:
     case EMS_DEVICE_FLAG_RC300:
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(modetype), this->device_type(), "modetype", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(ecotemp), this->device_type(), "ecotemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(manualtemp), this->device_type(), "manualtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(comforttemp), this->device_type(), "comforttemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(summertemp), this->device_type(), "summertemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(designtemp), this->device_type(), "designtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(offsettemp), this->device_type(), "offsettemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(minflowtemp), this->device_type(), "minflowtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(maxflowtemp), this->device_type(), "maxflowtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(roominfluence), this->device_type(), "roominfluence", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nofrosttemp), this->device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(modetype), device_type(), "modetype", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(ecotemp), device_type(), "ecotemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(manualtemp), device_type(), "manualtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(comforttemp), device_type(), "comforttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(summertemp), device_type(), "summertemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(designtemp), device_type(), "designtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(offsettemp), device_type(), "offsettemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(minflowtemp), device_type(), "minflowtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(maxflowtemp), device_type(), "maxflowtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(roominfluence), device_type(), "roominfluence", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nofrosttemp), device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(targetflowtemp), device_type(), "targetflowtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(controlmode), device_type(), "controlmode", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(program), device_type(), "program", nullptr, nullptr);
         break;
     case EMS_DEVICE_FLAG_RC20_2:
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(daytemp), this->device_type(), "daytemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nighttemp), this->device_type(), "nighttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(daytemp), device_type(), "daytemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nighttemp), device_type(), "nighttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(program), device_type(), "program", nullptr, nullptr);
         break;
     case EMS_DEVICE_FLAG_RC30_1:
     case EMS_DEVICE_FLAG_RC35:
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(modetype), this->device_type(), "modetype", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nighttemp), this->device_type(), "nighttemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(daytemp), this->device_type(), "daytemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(designtemp), this->device_type(), "designtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(offsettemp), this->device_type(), "offsettemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(holidaytemp), this->device_type(), "holidaytemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(targetflowtemp), this->device_type(), "targetflowtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(summertemp), this->device_type(), "summertemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nofrosttemp), this->device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(roominfluence), this->device_type(), "roominfluence", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(minflowtemp), this->device_type(), "minflowtemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(maxflowtemp), this->device_type(), "maxflowtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(modetype), device_type(), "modetype", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nighttemp), device_type(), "nighttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(daytemp), device_type(), "daytemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(designtemp), device_type(), "designtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(offsettemp), device_type(), "offsettemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(holidaytemp), device_type(), "holidaytemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(targetflowtemp), device_type(), "targetflowtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(summertemp), device_type(), "summertemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nofrosttemp), device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(roominfluence), device_type(), "roominfluence", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(minflowtemp), device_type(), "minflowtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(maxflowtemp), device_type(), "maxflowtemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(reducemode), device_type(), "reducemode", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(controlmode), device_type(), "controlmode", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(program), device_type(), "program", nullptr, nullptr);
         break;
     case EMS_DEVICE_FLAG_JUNKERS:
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(modetype), this->device_type(), "modetype", nullptr, nullptr);
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(heattemp), this->device_type(), "heattemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(ecotemp), this->device_type(), "ecotemp", F_(degrees), F_(icontemperature));
-        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nofrosttemp), this->device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(modetype), device_type(), "modetype", nullptr, nullptr);
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(heattemp), device_type(), "heattemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(ecotemp), device_type(), "ecotemp", F_(degrees), F_(icontemperature));
+        Mqtt::register_mqtt_ha_sensor(hc_name, nullptr, F_(nofrosttemp), device_type(), "nofrosttemp", F_(degrees), F_(icontemperature));
         break;
     default:
         break;
@@ -1066,14 +1039,12 @@ bool Thermostat::thermostat_ha_cmd(const char * message, uint8_t hc_num) {
 
 // decodes the thermostat mode for the heating circuit based on the thermostat type
 // modes are off, manual, auto, day and night
-uint8_t Thermostat::HeatingCircuit::get_mode(uint8_t flags) const {
+uint8_t Thermostat::HeatingCircuit::get_mode(uint8_t model) const {
     if (!Helpers::hasValue(mode)) {
         return HeatingCircuit::Mode::UNKNOWN;
     }
 
-    flags &= 0x0F; // strip top 4 bits
-
-    if (flags == EMSdevice::EMS_DEVICE_FLAG_RC20) {
+    if (model == EMSdevice::EMS_DEVICE_FLAG_RC20) {
         if (mode == 0) {
             return HeatingCircuit::Mode::OFF;
         } else if (mode == 1) {
@@ -1081,13 +1052,13 @@ uint8_t Thermostat::HeatingCircuit::get_mode(uint8_t flags) const {
         } else if (mode == 2) {
             return HeatingCircuit::Mode::AUTO;
         }
-    } else if ((flags == EMSdevice::EMS_DEVICE_FLAG_RC300) || (flags == EMSdevice::EMS_DEVICE_FLAG_RC100)) {
+    } else if ((model == EMSdevice::EMS_DEVICE_FLAG_RC300) || (model == EMSdevice::EMS_DEVICE_FLAG_RC100)) {
         if (mode == 0) {
             return HeatingCircuit::Mode::MANUAL;
         } else if (mode == 1) {
             return HeatingCircuit::Mode::AUTO;
         }
-    } else if (flags == EMSdevice::EMS_DEVICE_FLAG_JUNKERS) {
+    } else if (model == EMSdevice::EMS_DEVICE_FLAG_JUNKERS) {
         if (mode == 1) {
             return HeatingCircuit::Mode::MANUAL;
         } else if (mode == 2) {
@@ -1110,10 +1081,8 @@ uint8_t Thermostat::HeatingCircuit::get_mode(uint8_t flags) const {
 
 // figures out the thermostat day/night mode depending on the thermostat type
 // mode types are day, night, eco, comfort
-uint8_t Thermostat::HeatingCircuit::get_mode_type(uint8_t flags) const {
-    flags &= 0x0F; // strip top 4 bits
-
-    if (flags == EMS_DEVICE_FLAG_JUNKERS) {
+uint8_t Thermostat::HeatingCircuit::get_mode_type(uint8_t model) const {
+    if (model == EMS_DEVICE_FLAG_JUNKERS) {
         if (mode_type == 3) {
             return HeatingCircuit::Mode::HEAT;
         } else if (mode_type == 2) {
@@ -1121,19 +1090,19 @@ uint8_t Thermostat::HeatingCircuit::get_mode_type(uint8_t flags) const {
         } else if (mode_type == 1) {
             return HeatingCircuit::Mode::NOFROST;
         }
-    } else if ((flags == EMS_DEVICE_FLAG_RC35) || (flags == EMS_DEVICE_FLAG_RC30_1)) {
+    } else if ((model == EMS_DEVICE_FLAG_RC35) || (model == EMS_DEVICE_FLAG_RC30_1)) {
         if (mode_type == 0) {
             return HeatingCircuit::Mode::NIGHT;
         } else if (mode_type == 1) {
             return HeatingCircuit::Mode::DAY;
         }
-    } else if (flags == EMS_DEVICE_FLAG_RC300) {
+    } else if (model == EMS_DEVICE_FLAG_RC300) {
         if (mode_type == 0) {
             return HeatingCircuit::Mode::ECO;
         } else if (mode_type == 1) {
             return HeatingCircuit::Mode::COMFORT;
         }
-    } else if (flags == EMS_DEVICE_FLAG_RC100) {
+    } else if (model == EMS_DEVICE_FLAG_RC100) {
         return HeatingCircuit::Mode::DAY; // no modes on these devices
     }
 
@@ -1209,6 +1178,7 @@ void Thermostat::process_RC20Set(std::shared_ptr<const Telegram> telegram) {
 }
 
 // type 0xAE - data from the RC20 thermostat (0x17)
+// 17 00 AE 00 80 12 2E 00 D0 00 00 64 (#data=8)
 void Thermostat::process_RC20Monitor_2(std::shared_ptr<const Telegram> telegram) {
     std::shared_ptr<Thermostat::HeatingCircuit> hc = heating_circuit(telegram);
     if (hc == nullptr) {
@@ -1221,12 +1191,16 @@ void Thermostat::process_RC20Monitor_2(std::shared_ptr<const Telegram> telegram)
 
 // 0xAD - for reading the mode from the RC20/ES72 thermostat (0x17)
 // see https://github.com/proddy/EMS-ESP/issues/334#issuecomment-611698259
+// offset: 01-nighttemp, 02-daytemp, 03-mode, 0B-program(1-9), 0D-setpoint_roomtemp(temporary)
 void Thermostat::process_RC20Set_2(std::shared_ptr<const Telegram> telegram) {
     std::shared_ptr<Thermostat::HeatingCircuit> hc = heating_circuit(telegram);
     if (hc == nullptr) {
         return;
     }
+    changed_ |= telegram->read_value(hc->nighttemp, 1); // is * 2,
+    changed_ |= telegram->read_value(hc->daytemp, 2);   // is * 2,
     changed_ |= telegram->read_value(hc->mode, 3);
+    changed_ |= telegram->read_value(hc->program, 11); // 1 .. 9 predefined programs
 }
 
 // 0xAF - for reading the roomtemperature from the RC20/ES72 thermostat (0x18, 0x19, ..)
@@ -1267,6 +1241,7 @@ void Thermostat::process_JunkersSet(std::shared_ptr<const Telegram> telegram) {
     changed_ |= telegram->read_value(hc->nighttemp, 16);   // is * 2
     changed_ |= telegram->read_value(hc->nofrosttemp, 15); // is * 2
 }
+
 // type 0x0179, ff
 void Thermostat::process_JunkersSet2(std::shared_ptr<const Telegram> telegram) {
     std::shared_ptr<Thermostat::HeatingCircuit> hc = heating_circuit(telegram);
@@ -1281,9 +1256,6 @@ void Thermostat::process_JunkersSet2(std::shared_ptr<const Telegram> telegram) {
 // type 0xA3 - for external temp settings from the the RC* thermostats (e.g. RC35)
 void Thermostat::process_RCOutdoorTemp(std::shared_ptr<const Telegram> telegram) {
     changed_ |= telegram->read_value(dampedoutdoortemp_, 0);
-    if (dampedoutdoortemp_ == 0) {
-        dampedoutdoortemp_ = EMS_VALUE_INT_NOTSET; // special case for RC20's where the value is always 0
-    }
     changed_ |= telegram->read_value(tempsensor1_, 3); // sensor 1 - is * 10
     changed_ |= telegram->read_value(tempsensor2_, 5); // sensor 2 - is * 10
 }
@@ -1327,7 +1299,7 @@ void Thermostat::process_RC35wwSettings(std::shared_ptr<const Telegram> telegram
     changed_ |= telegram->read_value(wwCircMode_, 3); // 0 off, 1-on, 2-auto
 }
 
-// type 0x6F - FR10/FR50/FR100 Junkers
+// type 0x6F - FR10/FR50/FR100/FR110/FR120 Junkers
 void Thermostat::process_JunkersMonitor(std::shared_ptr<const Telegram> telegram) {
     // ignore single byte telegram messages
     if (telegram->message_length <= 1) {
@@ -1388,6 +1360,7 @@ void Thermostat::process_RC300Set(std::shared_ptr<const Telegram> telegram) {
     changed_ |= telegram->read_value(hc->daytemp, 2);     // is * 2
     changed_ |= telegram->read_value(hc->nighttemp, 4);   // is * 2
     changed_ |= telegram->read_value(hc->manualtemp, 10); // is * 2
+    changed_ |= telegram->read_value(hc->program, 11);    // timer program 1 or 2
 }
 
 // types 0x2AF ff
@@ -1414,6 +1387,7 @@ void Thermostat::process_RC300Curve(std::shared_ptr<const Telegram> telegram) {
     if (hc == nullptr) {
         return;
     }
+    changed_ |= telegram->read_value(hc->controlmode, 0); // 1-outdoor, 2-simple, 3-MPC, 4-room, 5-power, 6-const
     changed_ |= telegram->read_value(hc->heatingtype, 1); // 1=radiator, 2=convector, 3=floor
     changed_ |= telegram->read_value(hc->nofrosttemp, 6);
     if (hc->heatingtype < 3) {
@@ -1491,6 +1465,9 @@ void Thermostat::process_RC35Monitor(std::shared_ptr<const Telegram> telegram) {
     // exit if the 15th byte (second from last) is 0x00, which I think is calculated flow setpoint temperature
     // with weather controlled RC35s this value is >=5, otherwise can be zero and our setpoint temps will be incorrect
     // see https://github.com/proddy/EMS-ESP/issues/373#issuecomment-627907301
+    if (telegram->offset > 0 || telegram->message_length < 15) {
+        return;
+    }
     if (telegram->message_data[14] == 0x00) {
         return;
     }
@@ -1512,7 +1489,7 @@ void Thermostat::process_RC35Monitor(std::shared_ptr<const Telegram> telegram) {
 // type 0x3D (HC1), 0x47 (HC2), 0x51 (HC3), 0x5B (HC4) - Working Mode Heating - for reading the mode from the RC35 thermostat (0x10)
 void Thermostat::process_RC35Set(std::shared_ptr<const Telegram> telegram) {
     // check to see we have a valid type. heating: 1 radiator, 2 convectors, 3 floors, 4 room supply
-    if (telegram->message_data[0] == 0x00) {
+    if (telegram->offset == 0 && telegram->message_data[0] == 0x00) {
         return;
     }
 
@@ -1531,6 +1508,9 @@ void Thermostat::process_RC35Set(std::shared_ptr<const Telegram> telegram) {
     changed_ |= telegram->read_value(hc->summertemp, 22);     // is * 1
     changed_ |= telegram->read_value(hc->nofrosttemp, 23);    // is * 1
     changed_ |= telegram->read_value(hc->flowtempoffset, 24); // is * 1, only in mixed circuits
+    changed_ |= telegram->read_value(hc->reducemode, 25);     // 0-nofrost, 1-reduce, 2-roomhold, 3-outdoorhold
+    changed_ |= telegram->read_value(hc->controlmode, 33);    // 0-outdoortemp, 1-roomtemp
+    // changed_ |= telegram->read_value(hc->noreducetemp, 38);    // outdoor temperature for no reduce
     changed_ |= telegram->read_value(hc->minflowtemp, 16);
     if (hc->heatingtype == 3) {
         changed_ |= telegram->read_value(hc->designtemp, 36);  // is * 1
@@ -1541,12 +1521,21 @@ void Thermostat::process_RC35Set(std::shared_ptr<const Telegram> telegram) {
     }
 }
 
+// type 0x3F (HC1), 0x49 (HC2), 0x53 (HC3), 0x5D (HC4) - timer setting
+void Thermostat::process_RC35Timer(std::shared_ptr<const Telegram> telegram) {
+    std::shared_ptr<Thermostat::HeatingCircuit> hc = heating_circuit(telegram);
+    if (hc == nullptr) {
+        return;
+    }
+    changed_ |= telegram->read_value(hc->program, 84); // 0 .. 10, 0-userprogram 1, 10-userprogram 2
+}
+
 // process_RCTime - type 0x06 - date and time from a thermostat - 14 bytes long
 void Thermostat::process_RCTime(std::shared_ptr<const Telegram> telegram) {
-    if (this->flags() == EMS_DEVICE_FLAG_EASY) {
+    if (flags() == EMS_DEVICE_FLAG_EASY) {
         return; // not supported
     }
-    if (telegram->message_length < 7) {
+    if (telegram->offset > 0 || telegram->message_length < 8) {
         return;
     }
     if (telegram->message_data[7] & 0x0C) { // date and time not valid
@@ -1580,10 +1569,13 @@ void Thermostat::process_RCTime(std::shared_ptr<const Telegram> telegram) {
     }
 }
 
-// process_RCError - type 0xA2 - error maeesage - 14 bytes long
+// process_RCError - type 0xA2 - error message - 14 bytes long
 // 10 00 A2 00 41 32 32 03 30 00 02 00 00 00 00 00 00 02 CRC
 //              A  2  2  816
 void Thermostat::process_RCError(std::shared_ptr<const Telegram> telegram) {
+    if (telegram->offset > 0 || telegram->message_length < 5) {
+        return;
+    }
     if (errorCode_.empty()) {
         errorCode_.resize(10, '\0');
     }
@@ -1596,8 +1588,12 @@ void Thermostat::process_RCError(std::shared_ptr<const Telegram> telegram) {
 
     snprintf_P(&errorCode_[0], errorCode_.capacity() + 1, PSTR("%s(%d)"), buf, errorNumber_);
 }
-// 0x12
+
+// 0x12 error log
 void Thermostat::process_RCErrorMessage(std::shared_ptr<const Telegram> telegram) {
+    if (telegram->offset > 0 || telegram->message_length < 12) {
+        return;
+    }
     // data: displaycode(2), errornumber(2), year, month, hour, day, minute, duration(2), src-addr
     if (telegram->message_data[4] & 0x80) { // valid date
         char     code[3];
@@ -1623,8 +1619,12 @@ bool Thermostat::set_minexttemp(const char * value, const int8_t id) {
         return false;
     }
 
-    LOG_INFO(F("Setting min external temperature to %d"), mt);
-    write_command(EMS_TYPE_IBASettings, 5, mt, EMS_TYPE_IBASettings);
+    LOG_INFO(F("Setting min external temperature to %d C"), mt);
+    if ((model() == EMS_DEVICE_FLAG_RC300) || (model() == EMS_DEVICE_FLAG_RC100)) {
+        write_command(0x240, 10, mt, 0x240);
+    } else {
+        write_command(EMS_TYPE_IBASettings, 5, mt, EMS_TYPE_IBASettings);
+    }
 
     return true;
 }
@@ -1651,7 +1651,7 @@ bool Thermostat::set_calinttemp(const char * value, const int8_t id) {
         return false;
     }
 
-    LOG_INFO(F("Calibrating internal temperature to %d.%d"), ct / 10, ct < 0 ? -ct % 10 : ct % 10);
+    LOG_INFO(F("Calibrating internal temperature to %d.%d C"), ct / 10, ct < 0 ? -ct % 10 : ct % 10);
     write_command(EMS_TYPE_IBASettings, 2, ct, EMS_TYPE_IBASettings);
 
     return true;
@@ -1671,6 +1671,30 @@ bool Thermostat::set_display(const char * value, const int8_t id) {
     return true;
 }
 
+// set roomtemp for HA-thermostat
+bool Thermostat::set_roomtemp(const char * value, const int8_t id) {
+    float f = 0;
+    if (!Helpers::value2float(value, f)) {
+        LOG_WARNING(F("Set roomtemperature: Invalid value"));
+        return false;
+    }
+
+    uint8_t                                     hc_num = (id == -1) ? AUTO_HEATING_CIRCUIT : id;
+    std::shared_ptr<Thermostat::HeatingCircuit> hc     = heating_circuit(hc_num);
+    if (hc == nullptr) {
+        return false;
+    }
+
+    if (f > 100 || f < 0) {
+        hc->ha_temp = EMS_VALUE_SHORT_NOTSET;
+    } else {
+        hc->ha_temp = (int16_t)(f * 10);
+    }
+
+    return true;
+}
+
+// set remotetemp for RC20 remote simulation on RC35 master
 bool Thermostat::set_remotetemp(const char * value, const int8_t id) {
     float f = 0;
     if (!Helpers::value2float(value, f)) {
@@ -1703,7 +1727,7 @@ bool Thermostat::set_building(const char * value, const int8_t id) {
 
     LOG_INFO(F("Setting building to %s"), value);
 
-    if ((this->model() == EMS_DEVICE_FLAG_RC300) || (this->model() == EMS_DEVICE_FLAG_RC100)) {
+    if ((model() == EMS_DEVICE_FLAG_RC300) || (model() == EMS_DEVICE_FLAG_RC100)) {
         write_command(0x240, 9, bd + 1, 0x240);
     } else {
         write_command(EMS_TYPE_IBASettings, 6, bd, EMS_TYPE_IBASettings);
@@ -1728,15 +1752,15 @@ bool Thermostat::set_language(const char * value, const int8_t id) {
 
 // Set the control-mode for hc 0-off, 1-RC20, 2-RC3x
 bool Thermostat::set_control(const char * value, const int8_t id) {
-    int ctrl = 0;
-    if (!Helpers::value2number(value, ctrl)) {
+    uint8_t ctrl = 0;
+    if (!Helpers::value2enum(value, ctrl, {F("off"), F("rc20"), F("rc3x")})) {
         LOG_WARNING(F("Set control: Invalid value"));
         return false;
     }
 
     uint8_t                                     hc_num = (id == -1) ? AUTO_HEATING_CIRCUIT : id;
     std::shared_ptr<Thermostat::HeatingCircuit> hc     = heating_circuit(hc_num);
-    if (hc == nullptr || ctrl > 2) {
+    if (hc == nullptr) {
         return false;
     }
 
@@ -1749,7 +1773,8 @@ bool Thermostat::set_control(const char * value, const int8_t id) {
 // sets the thermostat ww working mode, where mode is a string, ems and ems+
 bool Thermostat::set_wwmode(const char * value, const int8_t id) {
     uint8_t set = 0xFF;
-    if ((this->model() == EMS_DEVICE_FLAG_RC300) || (this->model() == EMS_DEVICE_FLAG_RC100)) {
+
+    if ((model() == EMS_DEVICE_FLAG_RC300) || (model() == EMS_DEVICE_FLAG_RC100)) {
         if (!Helpers::value2enum(value, set, {F("off"), F("low"), F("high"), F("auto"), F("own")})) {
             LOG_WARNING(F("Set warm water mode: Invalid mode"));
             return false;
@@ -1774,7 +1799,7 @@ bool Thermostat::set_wwtemp(const char * value, const int8_t id) {
         LOG_WARNING(F("Set warm water high temperature: Invalid value"));
         return false;
     }
-    LOG_INFO(F("Setting warm water high temperature to %d"), t);
+    LOG_INFO(F("Setting warm water high temperature to %d C"), t);
     write_command(0x031B, 0, t, 0x031B);
     return true;
 }
@@ -1786,7 +1811,7 @@ bool Thermostat::set_wwtemplow(const char * value, const int8_t id) {
         LOG_WARNING(F("Set warm water low temperature: Invalid value"));
         return false;
     }
-    LOG_INFO(F("Setting warm water low temperature to %d"), t);
+    LOG_INFO(F("Setting warm water low temperature to %d C"), t);
     write_command(0x031B, 1, t, 0x031B);
     return true;
 }
@@ -1804,11 +1829,11 @@ bool Thermostat::set_wwonetime(const char * value, const int8_t id) {
     return true;
 }
 
-
 // sets the thermostat ww circulation working mode, where mode is a string
 bool Thermostat::set_wwcircmode(const char * value, const int8_t id) {
     uint8_t set = 0xFF;
-    if ((this->model() == EMS_DEVICE_FLAG_RC300) || (this->model() == EMS_DEVICE_FLAG_RC100)) {
+
+    if ((model() == EMS_DEVICE_FLAG_RC300) || (model() == EMS_DEVICE_FLAG_RC100)) {
         if (!Helpers::value2enum(value, set, {F("off"), F("on"), F("auto"), F("own")})) {
             LOG_WARNING(F("Set warm water circulation mode: Invalid mode"));
             return false;
@@ -1836,20 +1861,31 @@ bool Thermostat::set_holiday(const char * value, const int8_t id) {
     uint8_t                                     hc_num = (id == -1) ? AUTO_HEATING_CIRCUIT : id;
     std::shared_ptr<Thermostat::HeatingCircuit> hc     = heating_circuit(hc_num);
     if (hc == nullptr) {
-        LOG_WARNING(F("Set holiday: Heating Circuit %d not found or activated for device ID 0x%02X"), hc_num, this->device_id());
+        LOG_WARNING(F("Set holiday: Heating Circuit %d not found or activated for device ID 0x%02X"), hc_num, device_id());
         return false;
     }
-
+    if (hd.length() != 21 || hd[6] != '2' || hd[17] != '2') {
+        LOG_WARNING(F("Set holiday: Invalid value"));
+        return false;
+    }
     uint8_t data[6];
     data[0] = (hd[0] - '0') * 10 + (hd[1] - '0');
     data[1] = (hd[3] - '0') * 10 + (hd[4] - '0');
     data[2] = (hd[7] - '0') * 100 + (hd[8] - '0') * 10 + (hd[9] - '0');
-    data[3] = (hd[11] - '0') * 10 + (hd[11] - '0');
+    data[3] = (hd[11] - '0') * 10 + (hd[12] - '0');
     data[4] = (hd[14] - '0') * 10 + (hd[15] - '0');
     data[5] = (hd[18] - '0') * 100 + (hd[19] - '0') * 10 + (hd[20] - '0');
 
-    LOG_INFO(F("Setting holiday for hc %d"), hc->hc_num());
-    write_command(timer_typeids[hc->hc_num() - 1], 87, data, 6, 0);
+    if (hd[10] == '-') {
+        LOG_INFO(F("Setting holiday away from home for hc %d"), hc->hc_num());
+        write_command(timer_typeids[hc->hc_num() - 1], 87, data, 6, 0);
+    } else if (hd[10] == '+') {
+        LOG_INFO(F("Setting holiday at home for hc %d"), hc->hc_num());
+        write_command(timer_typeids[hc->hc_num() - 1], 93, data, 6, 0);
+    } else {
+        LOG_WARNING(F("Set holiday: Invalid"));
+        return false;
+    }
 
     return true;
 }
@@ -1865,7 +1901,7 @@ bool Thermostat::set_pause(const char * value, const int8_t id) {
     uint8_t                                     hc_num = (id == -1) ? AUTO_HEATING_CIRCUIT : id;
     std::shared_ptr<Thermostat::HeatingCircuit> hc     = heating_circuit(hc_num);
     if (hc == nullptr) {
-        LOG_WARNING(F("Set pause: Heating Circuit %d not found or activated for device ID 0x%02X"), hc_num, this->device_id());
+        LOG_WARNING(F("Set pause: Heating Circuit %d not found or activated for device ID 0x%02X"), hc_num, device_id());
         return false;
     }
 
@@ -1886,7 +1922,7 @@ bool Thermostat::set_party(const char * value, const int8_t id) {
 
     std::shared_ptr<Thermostat::HeatingCircuit> hc = heating_circuit(hc_num);
     if (hc == nullptr) {
-        LOG_WARNING(F("Set party: Heating Circuit %d not found or activated for device ID 0x%02X"), hc_num, this->device_id());
+        LOG_WARNING(F("Set party: Heating Circuit %d not found or activated for device ID 0x%02X"), hc_num, device_id());
         return false;
     }
     LOG_INFO(F("Setting party: %d hours, hc: %d"), hrs, hc->hc_num());
@@ -2027,7 +2063,7 @@ bool Thermostat::set_mode_n(const uint8_t mode, const uint8_t hc_num) {
         break;
     }
 
-    switch (this->model()) {
+    switch (model()) {
     case EMSdevice::EMS_DEVICE_FLAG_RC20:
         offset          = EMS_OFFSET_RC20Set_mode;
         validate_typeid = set_typeids[hc_p];
@@ -2056,7 +2092,7 @@ bool Thermostat::set_mode_n(const uint8_t mode, const uint8_t hc_num) {
         }
         break;
     case EMSdevice::EMS_DEVICE_FLAG_JUNKERS:
-        if (this->has_flags(EMS_DEVICE_FLAG_JUNKERS_2)) {
+        if (has_flags(EMS_DEVICE_FLAG_JUNKERS_OLD)) {
             offset = EMS_OFFSET_JunkersSetMessage2_set_mode;
         } else {
             offset = EMS_OFFSET_JunkersSetMessage_set_mode;
@@ -2104,6 +2140,77 @@ bool Thermostat::set_summermode(const char * value, const int8_t id) {
     return true;
 }
 
+// sets the thermostat reducemode for RC35
+bool Thermostat::set_reducemode(const char * value, const int8_t id) {
+    uint8_t                                     hc_num = (id == -1) ? AUTO_HEATING_CIRCUIT : id;
+    std::shared_ptr<Thermostat::HeatingCircuit> hc     = heating_circuit(hc_num);
+    if (hc == nullptr) {
+        LOG_WARNING(F("Setting reduce mode: Heating Circuit %d not found or activated"), hc_num);
+        return false;
+    }
+    uint8_t set = 0xFF;
+    if (!Helpers::value2enum(value, set, {F("nofrost"), F("reduce"), F("room"), F("outdoor")})) {
+        LOG_WARNING(F("Setting reduce mode: Invalid mode"));
+        return false;
+    }
+    LOG_INFO(F("Setting reduce mode to %s for heating circuit %d"), value, hc->hc_num());
+    write_command(set_typeids[hc->hc_num() - 1], 25, set, set_typeids[hc->hc_num() - 1]);
+    return true;
+}
+
+// sets the thermostat controlmode for RC35, RC300
+bool Thermostat::set_controlmode(const char * value, const int8_t id) {
+    uint8_t                                     hc_num = (id == -1) ? AUTO_HEATING_CIRCUIT : id;
+    std::shared_ptr<Thermostat::HeatingCircuit> hc     = heating_circuit(hc_num);
+    if (hc == nullptr) {
+        LOG_WARNING(F("Setting control mode: Heating Circuit %d not found or activated"), hc_num);
+        return false;
+    }
+    uint8_t set = 0xFF;
+    if (model() == EMS_DEVICE_FLAG_RC300 || model() == EMS_DEVICE_FLAG_RC100) {
+        if (Helpers::value2enum(value, set, {F("off"), F("outdoor"), F("simple"), F("MPC"), F("room"), F("power"), F("const")})) {
+            LOG_INFO(F("Setting control mode to %d for heating circuit %d"), set, hc->hc_num());
+            write_command(curve_typeids[hc->hc_num() - 1], 0, set, curve_typeids[hc->hc_num() - 1]);
+            return true;
+        }
+    } else if (model() == EMS_DEVICE_FLAG_RC35 || model() == EMS_DEVICE_FLAG_RC30_1) {
+        if (Helpers::value2enum(value, set, {F("outdoor"), F("room")})) {
+            LOG_INFO(F("Setting control mode to %d for heating circuit %d"), set, hc->hc_num());
+            write_command(set_typeids[hc->hc_num() - 1], 33, set, set_typeids[hc->hc_num() - 1]);
+            return true;
+        }
+    }
+    LOG_WARNING(F("Setting control mode: Invalid mode"));
+    return false;
+}
+
+// sets the thermostat program for RC35 and RC20
+bool Thermostat::set_program(const char * value, const int8_t id) {
+    uint8_t                                     hc_num = (id == -1) ? AUTO_HEATING_CIRCUIT : id;
+    std::shared_ptr<Thermostat::HeatingCircuit> hc     = heating_circuit(hc_num);
+    if (hc == nullptr) {
+        LOG_WARNING(F("Setting program: Heating Circuit %d not found or activated"), hc_num);
+        return false;
+    }
+    int set = 0xFF;
+    if (!Helpers::value2number(value, set)) {
+        LOG_WARNING(F("Setting program: Invalid number"));
+        return false;
+    }
+
+    if (model() == EMS_DEVICE_FLAG_RC20_2 && set > 0 && set < 10) {
+        write_command(set_typeids[hc->hc_num() - 1], 11, set, set_typeids[hc->hc_num() - 1]);
+    } else if ((model() == EMS_DEVICE_FLAG_RC35 || model() == EMS_DEVICE_FLAG_RC30_1) && set < 11) {
+        write_command(timer_typeids[hc->hc_num() - 1], 84, set, timer_typeids[hc->hc_num() - 1]);
+    } else if ((model() == EMS_DEVICE_FLAG_RC300 || model() == EMS_DEVICE_FLAG_RC100) && (set == 1 || set == 2)) {
+        write_command(set_typeids[hc->hc_num() - 1], 11, set, set_typeids[hc->hc_num() - 1]);
+    } else {
+        LOG_WARNING(F("Setting program: Invalid number"));
+        return false;
+    }
+    LOG_INFO(F("Setting program to %d for heating circuit %d"), set, hc->hc_num());
+    return true;
+}
 
 // sets the thermostat temp, where mode is a string
 bool Thermostat::set_temperature(const float temperature, const std::string & mode, const uint8_t hc_num) {
@@ -2163,7 +2270,7 @@ bool Thermostat::set_temperature(const float temperature, const uint8_t mode, co
     // get hc based on number
     std::shared_ptr<Thermostat::HeatingCircuit> hc = heating_circuit(hc_num);
     if (hc == nullptr) {
-        LOG_WARNING(F("Set temperature: Heating Circuit %d not found or activated for device ID 0x%02X"), hc_num, this->device_id());
+        LOG_WARNING(F("Set temperature: Heating Circuit %d not found or activated for device ID 0x%02X"), hc_num, device_id());
         return false;
     }
 
@@ -2204,6 +2311,7 @@ bool Thermostat::set_temperature(const float temperature, const uint8_t mode, co
             offset          = 2;
             set_typeid      = summer_typeids[hc->hc_num() - 1];
             validate_typeid = set_typeid;
+            factor          = 1;
             break;
         case HeatingCircuit::Mode::DESIGN:
             set_typeid      = summer_typeids[hc->hc_num() - 1];
@@ -2245,7 +2353,7 @@ bool Thermostat::set_temperature(const float temperature, const uint8_t mode, co
             break;
         default:
         case HeatingCircuit::Mode::AUTO:
-            uint8_t mode_ = hc->get_mode(this->flags());
+            uint8_t mode_ = hc->get_mode(flags());
             if (mode_ == HeatingCircuit::Mode::MANUAL) {
                 offset = 0x0A; // manual offset
             } else {
@@ -2265,7 +2373,7 @@ bool Thermostat::set_temperature(const float temperature, const uint8_t mode, co
             break;
         default:
         case HeatingCircuit::Mode::AUTO: // automatic selection, if no type is defined, we use the standard code
-            uint8_t mode_type = hc->get_mode_type(this->flags());
+            uint8_t mode_type = hc->get_mode_type(flags());
             offset            = (mode_type == HeatingCircuit::Mode::NIGHT) ? EMS_OFFSET_RC20_2_Set_temp_night : EMS_OFFSET_RC20_2_Set_temp_day;
             break;
         }
@@ -2325,7 +2433,7 @@ bool Thermostat::set_temperature(const float temperature, const uint8_t mode, co
         case HeatingCircuit::Mode::AUTO:                         // automatic selection, if no type is defined, we use the standard code
             validate_typeid = monitor_typeids[hc->hc_num() - 1]; //get setpoint roomtemp back
             if (model == EMS_DEVICE_FLAG_RC35) {
-                uint8_t mode_ = hc->get_mode(this->flags());
+                uint8_t mode_ = hc->get_mode(flags());
                 if (mode_ == HeatingCircuit::Mode::NIGHT) {
                     offset = EMS_OFFSET_RC35Set_temp_night;
                 } else if (mode_ == HeatingCircuit::Mode::DAY) {
@@ -2334,7 +2442,7 @@ bool Thermostat::set_temperature(const float temperature, const uint8_t mode, co
                     offset = EMS_OFFSET_RC35Set_seltemp; // https://github.com/proddy/EMS-ESP/issues/310
                 }
             } else {
-                uint8_t mode_type = hc->get_mode_type(this->flags());
+                uint8_t mode_type = hc->get_mode_type(flags());
                 offset            = (mode_type == HeatingCircuit::Mode::NIGHT) ? EMS_OFFSET_RC35Set_temp_night : EMS_OFFSET_RC35Set_temp_day;
             }
             break;
@@ -2343,7 +2451,7 @@ bool Thermostat::set_temperature(const float temperature, const uint8_t mode, co
     } else if (model == EMS_DEVICE_FLAG_JUNKERS) {
         // figure out if we have older or new thermostats, Heating Circuits on 0x65 or 0x79
         // see https://github.com/proddy/EMS-ESP/issues/335#issuecomment-593324716)
-        bool old_junkers = (this->has_flags(EMS_DEVICE_FLAG_JUNKERS_2));
+        bool old_junkers = (has_flags(EMS_DEVICE_FLAG_JUNKERS_OLD));
         if (!old_junkers) {
             switch (mode) {
             case HeatingCircuit::Mode::NOFROST:
@@ -2359,7 +2467,7 @@ bool Thermostat::set_temperature(const float temperature, const uint8_t mode, co
                 break;
             default:
             case HeatingCircuit::Mode::AUTO: // automatic selection, if no type is defined, we use the standard code
-                uint8_t mode_type = hc->get_mode_type(this->flags());
+                uint8_t mode_type = hc->get_mode_type(flags());
                 if (mode_type == HeatingCircuit::Mode::NIGHT || mode_type == HeatingCircuit::Mode::ECO) {
                     offset = EMS_OFFSET_JunkersSetMessage_night_temp;
                 } else if (mode_type == HeatingCircuit::Mode::DAY || mode_type == HeatingCircuit::Mode::HEAT) {
@@ -2386,7 +2494,7 @@ bool Thermostat::set_temperature(const float temperature, const uint8_t mode, co
                 break;
             default:
             case HeatingCircuit::Mode::AUTO: // automatic selection, if no type is defined, we use the standard code
-                uint8_t mode_type = hc->get_mode_type(this->flags());
+                uint8_t mode_type = hc->get_mode_type(flags());
                 if (mode_type == HeatingCircuit::Mode::NIGHT || mode_type == HeatingCircuit::Mode::ECO) {
                     offset = EMS_OFFSET_JunkersSetMessage2_eco_temp;
                 } else if (mode_type == HeatingCircuit::Mode::DAY || mode_type == HeatingCircuit::Mode::HEAT) {
@@ -2495,7 +2603,7 @@ bool Thermostat::set_roominfluence(const char * value, const int8_t id) {
 // API commands for MQTT and Console
 void Thermostat::add_commands() {
     // if this thermostat doesn't support write, don't add the commands
-    if ((this->flags() & EMSdevice::EMS_DEVICE_FLAG_NO_WRITE) == EMSdevice::EMS_DEVICE_FLAG_NO_WRITE) {
+    if (has_flags(EMS_DEVICE_FLAG_NO_WRITE)) {
         return;
     }
 
@@ -2503,9 +2611,9 @@ void Thermostat::add_commands() {
     register_mqtt_cmd(F("temp"), [&](const char * value, const int8_t id) { return set_temp(value, id); });
     register_mqtt_cmd(F("mode"), [&](const char * value, const int8_t id) { return set_mode(value, id); });
     register_mqtt_cmd(F("datetime"), [&](const char * value, const int8_t id) { return set_datetime(value, id); });
+    register_mqtt_cmd(F("roomtemp"), [&](const char * value, const int8_t id) { return set_roomtemp(value, id); });
 
-    uint8_t model = this->model();
-    switch (model) {
+    switch (model()) {
     case EMS_DEVICE_FLAG_RC100:
     case EMS_DEVICE_FLAG_RC300:
         register_mqtt_cmd(F("manualtemp"), [&](const char * value, const int8_t id) { return set_manualtemp(value, id); });
@@ -2526,10 +2634,13 @@ void Thermostat::add_commands() {
         register_mqtt_cmd(F("maxflowtemp"), [&](const char * value, const int8_t id) { return set_maxflowtemp(value, id); });
         register_mqtt_cmd(F("minexttemp"), [&](const char * value, const int8_t id) { return set_minexttemp(value, id); });
         register_mqtt_cmd(F("roominfluence"), [&](const char * value, const int8_t id) { return set_roominfluence(value, id); });
+        register_mqtt_cmd(F("program"), [&](const char * value, const int8_t id) { return set_program(value, id); });
+        register_mqtt_cmd(F("controlmode"), [&](const char * value, const int8_t id) { return set_controlmode(value, id); });
         break;
     case EMS_DEVICE_FLAG_RC20_2:
         register_mqtt_cmd(F("nighttemp"), [&](const char * value, const int8_t id) { return set_nighttemp(value, id); });
         register_mqtt_cmd(F("daytemp"), [&](const char * value, const int8_t id) { return set_daytemp(value, id); });
+        register_mqtt_cmd(F("program"), [&](const char * value, const int8_t id) { return set_program(value, id); });
         break;
     case EMS_DEVICE_FLAG_RC30_1: // only RC30_1
         register_mqtt_cmd(F("clockoffset"), [&](const char * value, const int8_t id) { return set_clockoffset(value, id); });
@@ -2557,6 +2668,9 @@ void Thermostat::add_commands() {
         register_mqtt_cmd(F("flowtempoffset"), [&](const char * value, const int8_t id) { return set_flowtempoffset(value, id); });
         register_mqtt_cmd(F("minflowtemp"), [&](const char * value, const int8_t id) { return set_minflowtemp(value, id); });
         register_mqtt_cmd(F("maxflowtemp"), [&](const char * value, const int8_t id) { return set_maxflowtemp(value, id); });
+        register_mqtt_cmd(F("reducemode"), [&](const char * value, const int8_t id) { return set_reducemode(value, id); });
+        register_mqtt_cmd(F("program"), [&](const char * value, const int8_t id) { return set_program(value, id); });
+        register_mqtt_cmd(F("controlmode"), [&](const char * value, const int8_t id) { return set_controlmode(value, id); });
         break;
     case EMS_DEVICE_FLAG_JUNKERS:
         register_mqtt_cmd(F("nofrosttemp"), [&](const char * value, const int8_t id) { return set_nofrosttemp(value, id); });

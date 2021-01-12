@@ -31,9 +31,11 @@ WebSettingsService::WebSettingsService(AsyncWebServer * server, FS * fs, Securit
 
 void WebSettings::read(WebSettings & settings, JsonObject & root) {
     root["tx_mode"]              = settings.tx_mode;
+    root["tx_delay"]             = settings.tx_delay;
     root["ems_bus_id"]           = settings.ems_bus_id;
     root["syslog_enabled"]       = settings.syslog_enabled;
     root["syslog_level"]         = settings.syslog_level;
+    root["trace_raw"]            = settings.trace_raw;
     root["syslog_mark_interval"] = settings.syslog_mark_interval;
     root["syslog_host"]          = settings.syslog_host;
     root["master_thermostat"]    = settings.master_thermostat;
@@ -57,9 +59,10 @@ StateUpdateResult WebSettings::update(JsonObject & root, WebSettings & settings)
 
     // tx_mode, rx and tx pins
     snprintf_P(&crc_before[0], crc_before.capacity() + 1, PSTR("%d%d%d"), settings.tx_mode, settings.rx_gpio, settings.tx_gpio);
-    settings.tx_mode = root["tx_mode"] | EMSESP_DEFAULT_TX_MODE;
-    settings.rx_gpio = root["rx_gpio"] | EMSESP_DEFAULT_RX_GPIO;
-    settings.tx_gpio = root["tx_gpio"] | EMSESP_DEFAULT_TX_GPIO;
+    settings.tx_mode  = root["tx_mode"] | EMSESP_DEFAULT_TX_MODE;
+    settings.tx_delay = root["tx_delay"] | EMSESP_DEFAULT_TX_DELAY;
+    settings.rx_gpio  = root["rx_gpio"] | EMSESP_DEFAULT_RX_GPIO;
+    settings.tx_gpio  = root["tx_gpio"] | EMSESP_DEFAULT_TX_GPIO;
     snprintf_P(&crc_after[0], crc_after.capacity() + 1, PSTR("%d%d%d"), settings.tx_mode, settings.rx_gpio, settings.tx_gpio);
     if (crc_before != crc_after) {
         add_flags(ChangeFlags::UART);
@@ -77,6 +80,9 @@ StateUpdateResult WebSettings::update(JsonObject & root, WebSettings & settings)
     settings.syslog_level         = root["syslog_level"] | EMSESP_DEFAULT_SYSLOG_LEVEL;
     settings.syslog_mark_interval = root["syslog_mark_interval"] | EMSESP_DEFAULT_SYSLOG_MARK_INTERVAL;
     settings.syslog_host          = root["syslog_host"] | EMSESP_DEFAULT_SYSLOG_HOST;
+    settings.trace_raw            = root["trace_raw"] | EMSESP_DEFAULT_TRACELOG_RAW;
+    EMSESP::trace_raw(settings.trace_raw);
+
     snprintf_P(&crc_after[0],
                crc_after.capacity() + 1,
                PSTR("%d%d%d%s"),
@@ -138,32 +144,26 @@ StateUpdateResult WebSettings::update(JsonObject & root, WebSettings & settings)
 // either via the Web UI or via the Console
 void WebSettingsService::onUpdate() {
     if (WebSettings::has_flags(WebSettings::ChangeFlags::SHOWER)) {
-        // EMSESP::logger().info(F("shower changed!"));
         EMSESP::shower_.start();
     }
 
     if (WebSettings::has_flags(WebSettings::ChangeFlags::DALLAS)) {
-        // EMSESP::logger().info(F("dallas changed!"));
         EMSESP::dallassensor_.start();
     }
 
     if (WebSettings::has_flags(WebSettings::ChangeFlags::UART)) {
-        // EMSESP::logger().info(F("uart changed!"));
         EMSESP::init_tx();
     }
 
     if (WebSettings::has_flags(WebSettings::ChangeFlags::SYSLOG)) {
-        // EMSESP::logger().info(F("syslog changed!"));
         System::syslog_init();
     }
 
     if (WebSettings::has_flags(WebSettings::ChangeFlags::OTHER)) {
-        // EMSESP::logger().info(F("other changed!"));
         System::other_init();
     }
 
     if (WebSettings::has_flags(WebSettings::ChangeFlags::LED)) {
-        // EMSESP::logger().info(F("led changed!"));
         System::led_init();
     }
 }

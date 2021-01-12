@@ -67,6 +67,10 @@ class Thermostat : public EMSdevice {
         uint8_t flowtempoffset    = EMS_VALUE_UINT_NOTSET;
         uint8_t minflowtemp       = EMS_VALUE_UINT_NOTSET;
         uint8_t maxflowtemp       = EMS_VALUE_UINT_NOTSET;
+        uint8_t reducemode        = EMS_VALUE_UINT_NOTSET;
+        int16_t ha_temp           = EMS_VALUE_SHORT_NOTSET;
+        uint8_t program           = EMS_VALUE_UINT_NOTSET;
+        uint8_t controlmode       = EMS_VALUE_UINT_NOTSET;
 
         uint8_t hc_num() const {
             return hc_num_;
@@ -85,8 +89,8 @@ class Thermostat : public EMSdevice {
             return Helpers::hasValue(setpoint_roomTemp);
         }
 
-        uint8_t get_mode(uint8_t flags) const;
-        uint8_t get_mode_type(uint8_t flags) const;
+        uint8_t get_mode(uint8_t model) const;
+        uint8_t get_mode_type(uint8_t model) const;
 
         enum Mode : uint8_t {
             UNKNOWN,
@@ -121,10 +125,9 @@ class Thermostat : public EMSdevice {
 
     static std::string mode_tostring(uint8_t mode);
 
-    virtual void show_values(uuid::console::Shell & shell);
     virtual void publish_values(JsonObject & json, bool force);
     virtual bool export_values(JsonObject & json);
-    virtual void device_info_web(JsonArray & root);
+    virtual void device_info_web(JsonArray & root, uint8_t & part);
     virtual bool updated_values();
 
   private:
@@ -142,9 +145,9 @@ class Thermostat : public EMSdevice {
         ha_registered_ = b;
     }
 
-    // specific thermostat characteristics, stripping the last 4 bits
+    // specific thermostat characteristics, stripping the top 4 bits
     inline uint8_t model() const {
-        return (this->flags() & 0x0F);
+        return (flags() & 0x0F);
     }
 
     // each thermostat has a list of heating controller type IDs for reading and writing
@@ -280,6 +283,7 @@ class Thermostat : public EMSdevice {
     void process_RC35wwSettings(std::shared_ptr<const Telegram> telegram);
     void process_RC35Monitor(std::shared_ptr<const Telegram> telegram);
     void process_RC35Set(std::shared_ptr<const Telegram> telegram);
+    void process_RC35Timer(std::shared_ptr<const Telegram> telegram);
     void process_RC30Monitor(std::shared_ptr<const Telegram> telegram);
     void process_RC30Set(std::shared_ptr<const Telegram> telegram);
     void process_RC20Monitor(std::shared_ptr<const Telegram> telegram);
@@ -336,6 +340,10 @@ class Thermostat : public EMSdevice {
     bool set_flowtempoffset(const char * value, const int8_t id);
     bool set_minflowtemp(const char * value, const int8_t id);
     bool set_maxflowtemp(const char * value, const int8_t id);
+    bool set_roomtemp(const char * value, const int8_t id);
+    bool set_reducemode(const char * value, const int8_t id);
+    bool set_program(const char * value, const int8_t id);
+    bool set_controlmode(const char * value, const int8_t id);
 
     // set functions - these don't use the id/hc, the parameters are ignored
     bool set_wwmode(const char * value, const int8_t id);

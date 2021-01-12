@@ -82,7 +82,7 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
             </SelectValidator>
             <TextValidator
                 validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:40']}
-                errorMessages={['Rx GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 255"]}
+                errorMessages={['Rx GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 40"]}
                 name="rx_gpio"
                 label="Rx GPIO pin"
                 fullWidth
@@ -94,7 +94,7 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
             />
             <TextValidator
                 validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:40']}
-                errorMessages={['Tx GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 255"]}
+                errorMessages={['Tx GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 40"]}
                 name="tx_gpio"
                 label="Tx GPIO pin"
                 fullWidth
@@ -104,13 +104,25 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
                 onChange={handleValueChange('tx_gpio')}
                 margin="normal"
             />
+            <TextValidator
+                validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:120']}
+                errorMessages={['Tx delay is required', "Must be a number", "Must be 0 or higher", "Max value is 120"]}
+                name="tx_delay"
+                label="Tx delayed start (seconds)"
+                fullWidth
+                variant="outlined"
+                value={data.tx_delay}
+                type="number"
+                onChange={handleValueChange('tx_delay')}
+                margin="normal"
+            />
             <br></br>
             <Typography variant="h6" color="primary" >
                 Dallas Sensor
             </Typography>
             <TextValidator
                 validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:40']}
-                errorMessages={['Dallas GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 255"]}
+                errorMessages={['Dallas GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 40"]}
                 name="dallas_gpio"
                 label="Dallas GPIO pin (0=none)"
                 fullWidth
@@ -136,7 +148,7 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
             </Typography>
             <TextValidator
                 validators={['required', 'isNumber', 'minNumber:0', 'maxNumber:40']}
-                errorMessages={['LED GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 255"]}
+                errorMessages={['LED GPIO is required', "Must be a number", "Must be 0 or higher", "Max value is 40"]}
                 name="led_gpio"
                 label="LED GPIO pin (0=none)"
                 fullWidth
@@ -245,6 +257,17 @@ function EMSESPSettingsControllerForm(props: EMSESPSettingsControllerFormProps) 
                 onChange={handleValueChange('syslog_mark_interval')}
                 margin="normal"
             />
+            <BlockFormControlLabel
+                control={
+                    <Checkbox
+                        checked={data.trace_raw}
+                        onChange={handleValueChange('trace_raw')}
+                        value="trace_raw"
+                    />
+                }
+                label="Trace ems-telegrams in raw format"
+            />
+
             <br></br>
             <Typography variant="h6" color="primary" >
                 Analog Input

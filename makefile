@@ -21,6 +21,9 @@ SOURCES   := src lib_standalone lib/uuid-common/src lib/uuid-console/src lib/uui
 INCLUDES  := lib/ArduinoJson/src lib_standalone lib/uuid-common/src lib/uuid-console/src lib/uuid-log/src lib/uuid-telnet/src lib/uuid-syslog/src src/devices src
 LIBRARIES := 
 
+CPPCHECK = cppcheck
+CHECKFLAGS = -q --force --std=c++11
+
 #----------------------------------------------------------------------
 # Languages Standard
 #----------------------------------------------------------------------
@@ -128,6 +131,9 @@ $(BUILD)/%.o: %.cpp
 $(BUILD)/%.o: %.s
 	@mkdir -p $(@D)
 	$(COMPILE.s)
+
+cppcheck: $(SOURCES)
+	$(CPPCHECK) $(CHECKFLAGS) $^
 
 run: $(OUTPUT)
 	@$<

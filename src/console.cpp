@@ -46,14 +46,14 @@ EMSESPShell::EMSESPShell()
 }
 
 void EMSESPShell::started() {
-    logger().log(LogLevel::INFO, LogFacility::CONSOLE, F("User session opened on console %s"), console_name().c_str());
+    logger().log(LogLevel::DEBUG, LogFacility::CONSOLE, F("User session opened on console %s"), console_name().c_str());
 }
 
 void EMSESPShell::stopped() {
     if (has_flags(CommandFlags::ADMIN)) {
-        logger().log(LogLevel::INFO, LogFacility::AUTH, F("su session closed on console %s"), console_name().c_str());
+        logger().log(LogLevel::DEBUG, LogFacility::AUTH, F("su session closed on console %s"), console_name().c_str());
     }
-    logger().log(LogLevel::INFO, LogFacility::CONSOLE, F("User session closed on console %s"), console_name().c_str());
+    logger().log(LogLevel::DEBUG, LogFacility::CONSOLE, F("User session closed on console %s"), console_name().c_str());
 
     // remove all custom contexts
     commands->remove_all_commands();
@@ -381,13 +381,13 @@ void EMSESPShell::add_console_commands() {
             }
 
             const char * cmd = arguments[1].c_str();
-            if (!Command::find_command(device_type, cmd)) {
+            if (Command::find_command(device_type, cmd) == nullptr) {
                 shell.print(F("Unknown command. Available commands are: "));
                 Command::show(shell, device_type);
                 return;
             }
 
-            DynamicJsonDocument doc(EMSESP_MAX_JSON_SIZE_DYN);
+            DynamicJsonDocument doc(EMSESP_MAX_JSON_SIZE_LARGE_DYN);
             JsonObject          json = doc.to<JsonObject>();
 
             bool ok = false;
@@ -403,7 +403,6 @@ void EMSESPShell::add_console_commands() {
             }
 
             if (ok && json.size()) {
-                doc.shrinkToFit();
                 serializeJsonPretty(doc, shell);
                 shell.println();
             }
@@ -488,9 +487,12 @@ void Console::load_standard_commands(unsigned int context) {
                                                Test::run_test(shell, arguments.front());
                                            }
                                        });
+#if defined(EMSESP_STANDALONE)
+    EMSESPShell::commands->add_command(context, CommandFlags::USER, flash_string_vector{F("t")}, [](Shell & shell, const std::vector<std::string> & arguments) {
+        Test::run_test(shell, "default");
+    });
 #endif
-
-
+#endif
 
     EMSESPShell::commands->add_command(
         context,
@@ -681,6 +683,7 @@ void Console::start() {
 // note, this must be started after the network/wifi for ESP32 otherwise it'll crash
 #ifndef EMSESP_STANDALONE
     telnet_.start();
+    telnet_.initial_idle_timeout(3600);  // in sec, one hour idle timeout
     telnet_.default_write_timeout(1000); // in ms, socket timeout 1 second
 #endif
 

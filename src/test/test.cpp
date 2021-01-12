@@ -125,6 +125,13 @@ bool Test::run_test(const char * command, int8_t id) {
         // UBAuptime
         uart_telegram({0x08, 0x0B, 0x14, 00, 0x3C, 0x1F, 0xAC, 0x70});
 
+        // Boiler -> Me, UBAMonitorFast(0x18), telegram: 08 00 18 00 00 02 5A 73 3D 0A 10 65 40 02 1A 80 00 01 E1 01 76 0E 3D 48 00 C9 44 02 00 (#data=25)
+        uart_telegram({0x08, 0x00, 0x18, 0x00, 0x00, 0x02, 0x5A, 0x73, 0x3D, 0x0A, 0x10, 0x65, 0x40, 0x02, 0x1A,
+                       0x80, 0x00, 0x01, 0xE1, 0x01, 0x76, 0x0E, 0x3D, 0x48, 0x00, 0xC9, 0x44, 0x02, 0x00});
+
+        // Boiler -> Me, UBAParameterWW(0x33), telegram: 08 0B 33 00 08 FF 34 FB 00 28 00 00 46 00 FF FF 00 (#data=13)
+        uart_telegram({0x08, 0x0B, 0x33, 0x00, 0x08, 0xFF, 0x34, 0xFB, 0x00, 0x28, 0x00, 0x00, 0x46, 0x00, 0xFF, 0xFF, 0x00});
+
         return true;
     }
 
@@ -132,16 +139,10 @@ bool Test::run_test(const char * command, int8_t id) {
         EMSESP::logger().info(F("Testing thermostat..."));
         add_device(0x10, 192); // FW120
 
-        // HC1
-        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x6F, 0x00, 0xCF, 0x21, 0x2E, 0x20, 0x00, 0x2E, 0x24,
-                       0x03, 0x25, 0x03, 0x03, 0x01, 0x03, 0x25, 0x00, 0xC8, 0x00, 0x00, 0x11, 0x01, 0x03});
-
-        // HC2
-        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x70, 0x00, 0xCF, 0x22, 0x2F, 0x10, 0x00, 0x2E, 0x24,
-                       0x03, 0x25, 0x03, 0x03, 0x01, 0x03, 0x25, 0x00, 0xC8, 0x00, 0x00, 0x11, 0x01, 0x03});
-
-        // HC3
-        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00});
+        // HC1 - 3
+        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x6F, 0x03, 0x02, 0x00, 0xCD, 0x00, 0xE4});
+        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x70, 0x02, 0x01, 0x00, 0xCE, 0x00, 0xE5});
+        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x71, 0x01, 0x02, 0x00, 0xCF, 0x00, 0xE6});
 
         return true;
     }
@@ -173,8 +174,7 @@ bool Test::run_test(const char * command, int8_t id) {
         add_device(0x38, 200); // Enviline module
         add_device(0x10, 192); // FW120 thermostat
 
-        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x6F, 0x00, 0xCF, 0x21, 0x2E, 0x20, 0x00, 0x2E, 0x24,
-                       0x03, 0x25, 0x03, 0x03, 0x01, 0x03, 0x25, 0x00, 0xC8, 0x00, 0x00, 0x11, 0x01, 0x03}); // HC1
+        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x6F, 0x03, 0x02, 0x00, 0xCD, 0x00, 0xE4});
 
         uart_telegram("38 0B FF 00 03 7B 0C 34 00 74");
 
@@ -185,11 +185,26 @@ bool Test::run_test(const char * command, int8_t id) {
 }
 
 // used with the 'test' command, under su/admin
-void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
+void Test::run_test(uuid::console::Shell & shell, const std::string & cmd) {
     // switch to su
     shell.add_flags(CommandFlags::ADMIN);
 
-    if ((command == "default") || (command == "general") || (command.empty())) {
+    // change MQTT format
+    EMSESP::esp8266React.getMqttSettingsService()->updateWithoutPropagation([&](MqttSettings & mqttSettings) {
+        // mqttSettings.mqtt_format = Mqtt::Format::SINGLE;
+        // mqttSettings.mqtt_format = Mqtt::Format::NESTED;
+        mqttSettings.mqtt_format = Mqtt::Format::HA;
+        return StateUpdateResult::CHANGED;
+    });
+
+    std::string command(20, '\0');
+    if ((cmd.empty()) || (cmd == "default")) {
+        command = EMSESP_TEST_DEFAULT;
+    } else {
+        command = cmd;
+    }
+
+    if (command == "general") {
         shell.printfln(F("Testing adding a general boiler & thermostat..."));
         run_test("general");
         shell.invoke_command("show devices");
@@ -200,46 +215,6 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
 
     if (command == "render") {
         shell.printfln(F("Testing render..."));
-
-        uint8_t  test1 = 12;
-        int8_t   test2 = -12;
-        uint16_t test3 = 456;
-        int16_t  test4 = -456;
-        uint8_t  test5 = 1; // bool = on
-        uint32_t test6 = 305419896;
-        float    test7 = 89.43;
-
-        uint8_t test1u = EMS_VALUE_UINT_NOTSET;
-        int8_t  test2u = EMS_VALUE_INT_NOTSET;
-
-        uint8_t  test5u = EMS_VALUE_BOOL_NOTSET;
-        uint32_t test6u = EMS_VALUE_ULONG_NOTSET;
-
-        uint16_t test3u = EMS_VALUE_USHORT_NOTSET;
-        int16_t  test4u = EMS_VALUE_SHORT_NOTSET;
-
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature1"), test1, F_(degrees));             // 12
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature2"), test2, F_(degrees));             // -12
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature3"), test3, F_(degrees), 10);         // 45.6
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature4"), test4, F_(degrees), 10);         // -45.6
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature5"), test5, nullptr, EMS_VALUE_BOOL); // on
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature6"), test6, F_(degrees));             //
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature7"), test7, F_(degrees), 2);          // 89.43
-        EMSdevice::print_value(shell, 2, F("Warm Water comfort setting"), F("Intelligent"));
-        char s[100];
-        strcpy(s, "Not very intelligent");
-        EMSdevice::print_value(shell, 2, F("Warm Water comfort setting2"), s);
-
-        shell.println();
-
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature1u"), test1u, F_(degrees));
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature2u"), test2u, F_(degrees));
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature3u"), test3u, F_(degrees), 10);
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature4u"), test4u, F_(degrees), 10);
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature5u"), test5u, F_(degrees), EMS_VALUE_BOOL);
-        EMSdevice::print_value(shell, 2, F("Selected flow temperature6u"), test6u, F_(degrees), 100);
-
-        shell.println();
 
         // check read_value to make sure it handles all the data type correctly
         uint8_t message_data[] = {1, 2, 3, 4, 5, 6, 7, 8, 9}; // message_length is 9
@@ -315,6 +290,16 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
         uart_telegram({0x08, 0x0B, 0x14, 00, 0x3C, 0x1F, 0xAC, 0x70});
     }
 
+    if (command == "620") {
+        EMSESP::logger().info(F("Testing 620..."));
+
+        // Version Controller
+        uart_telegram({0x09, 0x0B, 0x02, 0x00, 0x5F, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00});
+
+        // Version Boiler
+        uart_telegram({0x08, 0x0B, 0x02, 0x00, 0x5F, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00});
+    }
+
     // unknown device
     if (command == "unknown") {
         shell.printfln(F("Testing unknown..."));
@@ -382,7 +367,7 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
         shell.printfln(F("Testing boiler..."));
         run_test("boiler");
         shell.invoke_command("show");
-        shell.invoke_command("call boiler info");
+        // shell.invoke_command("call boiler info");
     }
 
     if (command == "fr120") {
@@ -391,8 +376,7 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
         add_device(0x10, 191); // FR120 thermostat
 
         // HC1
-        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x6F, 0x00, 0xCF, 0x21, 0x2E, 0x20, 0x00, 0x2E, 0x24,
-                       0x03, 0x25, 0x03, 0x03, 0x01, 0x03, 0x25, 0x00, 0xC8, 0x00, 0x00, 0x11, 0x01, 0x03});
+        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x6F, 0x01, 0x02, 0x00, 0xCF, 0x00, 0xE6});
 
         shell.invoke_command("show");
         shell.invoke_command("show devices");
@@ -402,6 +386,9 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
         shell.printfln(F("Testing adding a thermostat FW120..."));
         run_test("thermostat");
         shell.invoke_command("show");
+        shell.invoke_command("call system publish");
+        shell.invoke_command("show mqtt");
+
         EMSESP::mqtt_.incoming("ems-esp/thermostat_hc1", "heat");
         EMSESP::mqtt_.incoming("ems-esp/thermostat_hc2", "28.8");
         EMSESP::mqtt_.incoming("ems-esp/thermostat", "{\"cmd\":\"temp\",\"id\":2,\"data\":22}");
@@ -695,18 +682,21 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
         // add a thermostat with 3 HCs
         add_device(0x10, 192); // FW120
 
-        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x6F, 0x00, 0xCF, 0x21, 0x2E, 0x20, 0x00, 0x2E, 0x24,
-                       0x03, 0x25, 0x03, 0x03, 0x01, 0x03, 0x25, 0x00, 0xC8, 0x00, 0x00, 0x11, 0x01, 0x03}); // HC1
-        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x70, 0x00, 0xCF, 0x22, 0x2F, 0x10, 0x00, 0x2E, 0x24,
-                       0x03, 0x25, 0x03, 0x03, 0x01, 0x03, 0x25, 0x00, 0xC8, 0x00, 0x00, 0x11, 0x01, 0x03}); // HC2
-        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00});       // HC3
+        // HC1 - 3
+        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x6F, 0x03, 0x02, 0x00, 0xCD, 0x00, 0xE4});
+        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x70, 0x02, 0x01, 0x00, 0xCE, 0x00, 0xE5});
+        uart_telegram({0x90, 0x00, 0xFF, 0x00, 0x00, 0x71, 0x01, 0x02, 0x00, 0xCF, 0x00, 0xE6});
 
         shell.invoke_command("help");
-        shell.invoke_command("su");
         shell.invoke_command("call");
         shell.invoke_command("call system info");
 
         EMSESP::mqtt_.incoming("ems-esp/system", "{\"cmd\":\"info\"}"); // this should fail
+
+        EMSESP::mqtt_.incoming("ems-esp/thermostat", "{\"cmd\":\"temp\",\"data\":23.45}"); // this should work just fine
+        EMSESP::mqtt_.incoming("ems-esp/thermostat", "{\"cmd\":\"TeMP\",\"data\":23.45}"); // test mix cased cmd
+
+        EMSESP::mqtt_.incoming("ems-esp/thermostat_hc1", "20");
 
         shell.invoke_command("call thermostat wwmode");      // should do nothing
         shell.invoke_command("call thermostat mode auto 2"); // should error, no hc2
@@ -721,14 +711,6 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
 
     if (command == "mqtt") {
         shell.printfln(F("Testing MQTT..."));
-
-        // change MQTT format
-        EMSESP::esp8266React.getMqttSettingsService()->updateWithoutPropagation([&](MqttSettings & mqttSettings) {
-            // mqttSettings.mqtt_format = Mqtt::Format::SINGLE;
-            // mqttSettings.mqtt_format = Mqtt::Format::NESTED;
-            mqttSettings.mqtt_format = Mqtt::Format::HA;
-            return StateUpdateResult::CHANGED;
-        });
 
         // add a boiler
         add_device(0x08, 123); // Nefit Trendline
@@ -773,8 +755,8 @@ void Test::run_test(uuid::console::Shell & shell, const std::string & command) {
         EMSESP::mqtt_.incoming(system_topic, "{\"cmd\":\"pin\",\"id\":12,\"data\":\"1\"}");
 
         EMSESP::mqtt_.incoming(thermostat_topic, "{\"cmd\":\"wwmode\",\"data\":\"auto\"}");
-        EMSESP::mqtt_.incoming(thermostat_topic, "{\"cmd\":\"control\",\"data\":\"1\"}");          // RC35 only, should error
-        EMSESP::mqtt_.incoming(thermostat_topic, "{\"cmd\":\"mode\",\"data\":\"poep\",\"id\":2}"); // invalid mode
+        EMSESP::mqtt_.incoming(thermostat_topic, "{\"cmd\":\"control\",\"data\":\"1\"}");         // RC35 only, should error
+        EMSESP::mqtt_.incoming(thermostat_topic, "{\"cmd\":\"mode\",\"data\":\"bad\",\"id\":2}"); // invalid mode
         EMSESP::mqtt_.incoming(thermostat_topic, "{\"cmd\":\"mode\",\"data\":\"auto\",\"id\":2}");
         EMSESP::mqtt_.incoming(thermostat_topic, "{\"cmd\":\"mode\",\"data\":\"auto\",\"hc\":2}");     // hc as number
         EMSESP::mqtt_.incoming(thermostat_topic, "{\"cmd\":\"temp\",\"data\":19.5,\"hc\":1}");         // data as number

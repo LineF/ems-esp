@@ -140,11 +140,10 @@ class EMSdevice {
     void register_mqtt_cmd(const __FlashStringHelper * cmd, cmdfunction_p f);
 
     // virtual functions overrules by derived classes
-    virtual void show_values(uuid::console::Shell & shell)             = 0;
     virtual void publish_values(JsonObject & json, bool force = false) = 0;
     virtual bool export_values(JsonObject & json)                      = 0;
     virtual bool updated_values()                                      = 0;
-    virtual void device_info_web(JsonArray & root)                     = 0;
+    virtual void device_info_web(JsonArray & root, uint8_t & part)     = 0;
 
     std::string telegram_type_name(std::shared_ptr<const Telegram> telegram);
 
@@ -156,57 +155,12 @@ class EMSdevice {
         telegram_functions_.reserve(n);
     }
 
-    static void print_value_json(uuid::console::Shell &      shell,
-                                 const __FlashStringHelper * key,
-                                 const __FlashStringHelper * prefix,
-                                 const __FlashStringHelper * name,
-                                 const __FlashStringHelper * suffix,
-                                 JsonObject &                json);
-
-    static void print_value_json(JsonArray &                 root,
-                                 const __FlashStringHelper * key,
-                                 const __FlashStringHelper * prefix,
-                                 const __FlashStringHelper * name,
-                                 const __FlashStringHelper * suffix,
-                                 JsonObject &                json);
-
-    // prints an EMS device value to the console, handling the correct rendering of the type
-    // padding is # white space
-    // name is the name of the parameter
-    // suffix is any string to be appended after the value
-    // format:
-    //  for ints its  0=no division, 255=handle as boolean, other divide by the value given and render with a decimal point
-    //  for floats its the precision in number of decimal places from 0 to 8
-    //  for bools its EMS_VALUE_BOOL (0xFF)
-    template <typename Value>
-    static void print_value(uuid::console::Shell &      shell,
-                            uint8_t                     padding,
-                            const __FlashStringHelper * name,
-                            Value &                     value,
-                            const __FlashStringHelper * suffix,
-                            const uint8_t               format = 0) {
-        char buffer[15];
-        if (Helpers::render_value(buffer, value, format) == nullptr) {
-            return;
-        }
-
-        uint8_t i = padding;
-        while (i-- > 0) {
-            shell.print(F_(1space));
-        }
-
-        shell.printf(PSTR("%s: %s"), uuid::read_flash_string(name).c_str(), buffer);
-
-        if (suffix != nullptr) {
-            shell.print(F_(1space));
-            shell.println(uuid::read_flash_string(suffix).c_str());
-        } else {
-            shell.println();
-        }
-    }
-
-    static void print_value(uuid::console::Shell & shell, uint8_t padding, const __FlashStringHelper * name, const __FlashStringHelper * value);
-    static void print_value(uuid::console::Shell & shell, uint8_t padding, const __FlashStringHelper * name, const char * value);
+    static void create_value_json(JsonArray &                 root,
+                                  const __FlashStringHelper * key,
+                                  const __FlashStringHelper * prefix,
+                                  const __FlashStringHelper * name,
+                                  const __FlashStringHelper * suffix,
+                                  JsonObject &                json);
 
     enum Brand : uint8_t {
         NO_BRAND = 0, // 0
@@ -255,18 +209,18 @@ class EMSdevice {
     static constexpr uint8_t EMS_DEVICE_FLAG_IPM    = 3;
 
     // Thermostats
-    static constexpr uint8_t EMS_DEVICE_FLAG_NO_WRITE  = (1 << 7); // last bit
-    static constexpr uint8_t EMS_DEVICE_FLAG_EASY      = 1;
-    static constexpr uint8_t EMS_DEVICE_FLAG_RC10      = 2;
-    static constexpr uint8_t EMS_DEVICE_FLAG_RC20      = 3;
-    static constexpr uint8_t EMS_DEVICE_FLAG_RC20_2    = 4; // Variation on RC20, Older, like ES72?
-    static constexpr uint8_t EMS_DEVICE_FLAG_RC30_1    = 5; // variation on RC30, Newer?
-    static constexpr uint8_t EMS_DEVICE_FLAG_RC30      = 6;
-    static constexpr uint8_t EMS_DEVICE_FLAG_RC35      = 7;
-    static constexpr uint8_t EMS_DEVICE_FLAG_RC300     = 8;
-    static constexpr uint8_t EMS_DEVICE_FLAG_RC100     = 9;
-    static constexpr uint8_t EMS_DEVICE_FLAG_JUNKERS   = 10;
-    static constexpr uint8_t EMS_DEVICE_FLAG_JUNKERS_2 = (1 << 6); // 6th bit set if older models, like FR120, FR100
+    static constexpr uint8_t EMS_DEVICE_FLAG_NO_WRITE    = (1 << 7); // last bit
+    static constexpr uint8_t EMS_DEVICE_FLAG_JUNKERS_OLD = (1 << 6); // 6th bit set if older models, like FR120, FR100
+    static constexpr uint8_t EMS_DEVICE_FLAG_EASY        = 1;
+    static constexpr uint8_t EMS_DEVICE_FLAG_RC10        = 2;
+    static constexpr uint8_t EMS_DEVICE_FLAG_RC20        = 3;
+    static constexpr uint8_t EMS_DEVICE_FLAG_RC20_2      = 4; // Variation on RC20, Older, like ES72?
+    static constexpr uint8_t EMS_DEVICE_FLAG_RC30_1      = 5; // variation on RC30, Newer?
+    static constexpr uint8_t EMS_DEVICE_FLAG_RC30        = 6;
+    static constexpr uint8_t EMS_DEVICE_FLAG_RC35        = 7;
+    static constexpr uint8_t EMS_DEVICE_FLAG_RC300       = 8;
+    static constexpr uint8_t EMS_DEVICE_FLAG_RC100       = 9;
+    static constexpr uint8_t EMS_DEVICE_FLAG_JUNKERS     = 10;
 
   private:
     uint8_t     unique_id_;

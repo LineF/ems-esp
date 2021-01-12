@@ -38,11 +38,7 @@
 
 using uuid::console::Shell;
 
-#define EMSESP_MAX_JSON_SIZE_HA_CONFIG 384 // for small HA config payloads
-#define EMSESP_MAX_JSON_SIZE_SMALL 256     // for smaller json docs when using StaticJsonDocument
-#define EMSESP_MAX_JSON_SIZE_MEDIUM 768    // for medium json docs from ems devices, when using StaticJsonDocument
-#define EMSESP_MAX_JSON_SIZE_LARGE 1024    // for large json docs from ems devices, like boiler or thermostat data. Using StaticJsonDocument
-#define EMSESP_MAX_JSON_SIZE_DYN 2048      // for large json docs from web. Using DynamicJsonDocument
+#define MQTT_HA_PUBLISH_DELAY 50
 
 namespace emsesp {
 
@@ -101,6 +97,8 @@ class Mqtt {
     static void publish_retain(const std::string & topic, const JsonObject & payload, bool retain);
     static void publish_retain(const __FlashStringHelper * topic, const std::string & payload, bool retain);
     static void publish_retain(const __FlashStringHelper * topic, const JsonObject & payload, bool retain);
+    static void publish_ha(const std::string & topic, const JsonObject & payload);
+    static void publish_ha(const __FlashStringHelper * topic, const JsonObject & payload);
 
     static void register_mqtt_ha_binary_sensor(const __FlashStringHelper * name, const uint8_t device_type, const char * entity);
     static void register_mqtt_ha_sensor(const char *                prefix,
@@ -219,6 +217,7 @@ class Mqtt {
     uint32_t last_publish_sensor_     = 0;
 
     static bool     connecting_;
+    static bool     initialized_;
     static uint16_t mqtt_publish_fails_;
     static uint8_t  connectcount_;
 

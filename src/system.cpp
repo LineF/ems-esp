@@ -93,7 +93,7 @@ bool System::command_publish(const char * value, const int8_t id) {
 
 // restart EMS-ESP
 void System::restart() {
-    LOG_NOTICE(F("Restarting system..."));
+    LOG_INFO(F("Restarting system..."));
     Shell::loop_all();
     delay(1000); // wait a second
 #if defined(ESP8266)
@@ -105,7 +105,7 @@ void System::restart() {
 
 // saves all settings
 void System::wifi_reconnect() {
-    LOG_NOTICE(F("The wifi will reconnect..."));
+    LOG_INFO(F("The wifi will reconnect..."));
     Shell::loop_all();
     delay(1000);                                                                // wait a second
     EMSESP::webSettingsService.save();                                          // local settings
@@ -308,7 +308,7 @@ void System::show_mem(const char * note) {
 // send periodic MQTT message with system information
 void System::send_heartbeat() {
     // don't send heartbeat if WiFi is not connected
-    int rssi = wifi_quality();
+    int8_t rssi = wifi_quality();
     if (rssi == -1) {
         return;
     }
@@ -323,11 +323,11 @@ void System::send_heartbeat() {
 
     uint8_t ems_status = EMSESP::bus_status();
     if (ems_status == EMSESP::BUS_STATUS_TX_ERRORS) {
-        doc["status"] = "txerror";
+        doc["status"] = FJSON("txerror");
     } else if (ems_status == EMSESP::BUS_STATUS_CONNECTED) {
-        doc["status"] = "connected";
+        doc["status"] = FJSON("connected");
     } else {
-        doc["status"] = "disconnected";
+        doc["status"] = FJSON("disconnected");
     }
 
     doc["rssi"]       = rssi;
@@ -395,9 +395,11 @@ void System::system_check() {
 
         // not healthy if bus not connected
         if (!EMSbus::bus_connected()) {
+            if (system_healthy_) {
+                LOG_ERROR(F("Error: No connection to the EMS bus"));
+            }
             system_healthy_ = false;
             set_led_speed(LED_WARNING_BLINK); // flash every 1/2 second from now on
-            // LOG_ERROR(F("Error: No connection to the EMS bus"));
         } else {
             // if it was unhealthy but now we're better, make sure the LED is solid again cos we've been healed
             if (!system_healthy_) {
@@ -434,21 +436,22 @@ void System::led_monitor() {
 //  Low quality: 30% ~= -85dBm
 //  Unusable quality: 8% ~= -96dBm
 int8_t System::wifi_quality() {
-#ifndef EMSESP_STANDALONE
+#ifdef EMSESP_STANDALONE
+    return 100;
+#else
     if (WiFi.status() != WL_CONNECTED) {
         return -1;
     }
-    int dBm = WiFi.RSSI();
-#else
-    int8_t dBm = -70;
-#endif
+    int32_t dBm = WiFi.RSSI();
     if (dBm <= -100) {
         return 0;
     }
+
     if (dBm >= -50) {
         return 100;
     }
     return 2 * (dBm + 100);
+#endif
 }
 
 // print users to console
@@ -749,10 +752,10 @@ bool System::check_upgrade() {
 
     Serial.begin(115200);
 
-    bool                     failed = false;
-    File                     file;
-    JsonObject               network, general, mqtt, custom_settings;
-    StaticJsonDocument<1024> doc;
+    bool                                           failed = false;
+    File                                           file;
+    JsonObject                                     network, general, mqtt, custom_settings;
+    StaticJsonDocument<EMSESP_MAX_JSON_SIZE_LARGE> doc;
 
     // open the system settings:
     // {
@@ -1016,6 +1019,7 @@ bool System::command_info(const char * value, const int8_t id, JsonObject & json
     node["fragmem"] = ESP.getHeapFragmentation();
 #endif
 
+/* Use call system settings for all settings
     node = json.createNestedObject("Settings");
 
     EMSESP::esp8266React.getMqttSettingsService()->read([&](MqttSettings & settings) {
@@ -1047,6 +1051,7 @@ bool System::command_info(const char * value, const int8_t id, JsonObject & json
         node["bool_format"]       = settings.bool_format;
         node["analog_enabled"]    = Helpers::render_boolean(s, settings.analog_enabled);
     });
+*/
 
     node = json.createNestedObject("Status");
 
