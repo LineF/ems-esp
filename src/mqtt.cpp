@@ -25,7 +25,7 @@ namespace emsesp {
 AsyncMqttClient * Mqtt::mqttClient_;
 
 // static parameters we make global
-std::string Mqtt::hostname_;
+std::string Mqtt::mqtt_base_;
 uint8_t     Mqtt::mqtt_qos_;
 bool        Mqtt::mqtt_retain_;
 uint32_t    Mqtt::publish_time_boiler_;
@@ -77,10 +77,8 @@ void Mqtt::subscribe(const uint8_t device_type, const std::string & topic, mqtt_
     if (message == nullptr) {
         return;
     }
-
     // register in our libary with the callback function.
-    // We store both the original topic and the fully-qualified one
-    mqtt_subfunctions_.emplace_back(device_type, std::move(topic), std::move(message->topic), std::move(cb));
+    mqtt_subfunctions_.emplace_back(device_type, std::move(topic), std::move(cb));
 }
 
 // subscribe to the command topic if it doesn't exist yet
@@ -176,7 +174,7 @@ void Mqtt::show_mqtt(uuid::console::Shell & shell) {
     // show subscriptions
     shell.printfln(F("MQTT topic subscriptions:"));
     for (const auto & mqtt_subfunction : mqtt_subfunctions_) {
-        shell.printfln(F(" %s"), mqtt_subfunction.full_topic_.c_str());
+        shell.printfln(F(" %s/%s"), mqtt_base_.c_str(), mqtt_subfunction.topic_.c_str());
     }
     shell.println();
 
@@ -225,10 +223,15 @@ void Mqtt::incoming(const char * topic, const char * payload) {
 }
 
 // received an MQTT message that we subscribed too
-void Mqtt::on_message(const char * topic, const char * payload, size_t len) {
+void Mqtt::on_message(const char * fulltopic, const char * payload, size_t len) {
     if (len == 0) {
         return; // ignore empty payloads
     }
+    if (strncmp(fulltopic, mqtt_base_.c_str(), strlen(mqtt_base_.c_str())) != 0) {
+        return; // not for us
+    }
+    char topic[100];
+    strlcpy(topic, &fulltopic[1 + strlen(mqtt_base_.c_str())], 100);
 
     // convert payload to a null-terminated char string
     char message[len + 2];
@@ -239,7 +242,7 @@ void Mqtt::on_message(const char * topic, const char * payload, size_t len) {
 
     // see if we have this topic in our subscription list, then call its callback handler
     for (const auto & mf : mqtt_subfunctions_) {
-        if (strcmp(topic, mf.full_topic_.c_str()) == 0) {
+        if (strcmp(topic, mf.topic_.c_str()) == 0) {
             if (mf.mqtt_subfunction_) {
                 // matching function, call it. If it returns true keep quit
                 if ((mf.mqtt_subfunction_)(message)) {
@@ -308,7 +311,7 @@ void Mqtt::show_topic_handlers(uuid::console::Shell & shell, const uint8_t devic
     shell.print(F(" Subscribed MQTT topics: "));
     for (const auto & mqtt_subfunction : mqtt_subfunctions_) {
         if (mqtt_subfunction.device_type_ == device_type) {
-            shell.printf(F("%s "), mqtt_subfunction.topic_.c_str());
+            shell.printf(F("%s/%s "), mqtt_base_.c_str(), mqtt_subfunction.topic_.c_str());
         }
     }
     shell.println();
@@ -343,8 +346,7 @@ void Mqtt::start() {
     mqttClient_ = EMSESP::esp8266React.getMqttClient();
 
     // get the hostname, which we'll use to prefix to all topics
-    EMSESP::esp8266React.getWiFiSettingsService()->read([&](WiFiSettings & wifiSettings) { hostname_ = wifiSettings.hostname.c_str(); });
-
+    // EMSESP::esp8266React.getWiFiSettingsService()->read([&](WiFiSettings & wifiSettings) { hostname_ = wifiSettings.hostname.c_str(); });
     // fetch MQTT settings
     EMSESP::esp8266React.getMqttSettingsService()->read([&](MqttSettings & mqttSettings) {
         publish_time_boiler_     = mqttSettings.publish_time_boiler * 1000; // convert to milliseconds
@@ -357,6 +359,7 @@ void Mqtt::start() {
         mqtt_retain_             = mqttSettings.mqtt_retain;
         mqtt_format_             = mqttSettings.mqtt_format;
         mqtt_enabled_            = mqttSettings.enabled;
+        mqtt_base_               = mqttSettings.base.c_str();
     });
 
     // if MQTT disabled, quit
@@ -386,11 +389,9 @@ void Mqtt::start() {
         }
     });
 
-    // create will_topic with the hostname prefixed. It has to be static because asyncmqttclient destroys the reference
+    // create will_topic with the base prefixed. It has to be static because asyncmqttclient destroys the reference
     static char will_topic[MQTT_TOPIC_MAX_SIZE];
-    strlcpy(will_topic, hostname_.c_str(), MQTT_TOPIC_MAX_SIZE);
-    strlcat(will_topic, "/", MQTT_TOPIC_MAX_SIZE);
-    strlcat(will_topic, "status", MQTT_TOPIC_MAX_SIZE);
+    snprintf_P(will_topic, MQTT_TOPIC_MAX_SIZE, PSTR("%s/status"), mqtt_base_.c_str());
     mqttClient_->setWill(will_topic, 1, true, "offline"); // with qos 1, retain true
 
     mqttClient_->onMessage([this](char * topic, char * payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
@@ -510,7 +511,7 @@ void Mqtt::ha_status() {
 
     doc["name"]    = FJSON("EMS-ESP status");
     doc["uniq_id"] = FJSON("status");
-    doc["~"]       = System::hostname(); // ems-esp
+    doc["~"]       = mqtt_base_.c_str(); // ems-esp
     // doc["avty_t"]      = FJSON("~/status");
     doc["json_attr_t"] = FJSON("~/heartbeat");
     doc["stat_t"]      = FJSON("~/heartbeat");
@@ -529,7 +530,7 @@ void Mqtt::ha_status() {
 }
 
 // add sub or pub task to the queue.
-// a fully-qualified topic is created by prefixing the hostname, unless it's HA
+// a fully-qualified topic is created by prefixing the base, unless it's HA
 // returns a pointer to the message created
 std::shared_ptr<const MqttMessage> Mqtt::queue_message(const uint8_t operation, const std::string & topic, const std::string & payload, bool retain) {
     if (topic.empty()) {
@@ -538,15 +539,7 @@ std::shared_ptr<const MqttMessage> Mqtt::queue_message(const uint8_t operation, 
 
     // take the topic and prefix the hostname, unless its for HA
     std::shared_ptr<MqttMessage> message;
-    if ((strncmp(topic.c_str(), "homeassistant/", 13) == 0)) {
-        // leave topic as it is
-        message = std::make_shared<MqttMessage>(operation, topic, payload, retain);
-    } else {
-        // prefix the hostname
-        std::string full_topic(100, '\0');
-        snprintf_P(&full_topic[0], full_topic.capacity() + 1, PSTR("%s/%s"), hostname_.c_str(), topic.c_str());
-        message = std::make_shared<MqttMessage>(operation, full_topic, payload, retain);
-    }
+    message = std::make_shared<MqttMessage>(operation, topic, payload, retain);
 
     // if the queue is full, make room but removing the last one
     if (mqtt_messages_.size() >= MAX_MQTT_MESSAGES) {
@@ -675,13 +668,20 @@ void Mqtt::process_queue() {
     // fetch first from queue and create the full topic name
     auto mqtt_message = mqtt_messages_.front();
     auto message      = mqtt_message.content_;
+    char topic[MQTT_TOPIC_MAX_SIZE];
+    if ((strncmp(message->topic.c_str(), "homeassistant/", 13) == 0)) {
+        // leave topic as it is
+        strcpy(topic, message->topic.c_str());
+    } else {
+        snprintf_P(topic, MQTT_TOPIC_MAX_SIZE, PSTR("%s/%s"), mqtt_base_.c_str(), message->topic.c_str());
+    }
 
     // if we're subscribing...
     if (message->operation == Operation::SUBSCRIBE) {
-        LOG_DEBUG(F("Subscribing to topic: %s"), message->topic.c_str());
-        uint16_t packet_id = mqttClient_->subscribe(message->topic.c_str(), mqtt_qos_);
+        LOG_DEBUG(F("Subscribing to topic: %s"), topic);
+        uint16_t packet_id = mqttClient_->subscribe(topic, mqtt_qos_);
         if (!packet_id) {
-            LOG_DEBUG(F("Error subscribing to %s"), message->topic.c_str());
+            LOG_DEBUG(F("Error subscribing to %s"), topic);
         }
 
         mqtt_messages_.pop_front(); // remove the message from the queue
@@ -696,26 +696,25 @@ void Mqtt::process_queue() {
     }
 
     // else try and publish it
-    uint16_t packet_id =
-        mqttClient_->publish(message->topic.c_str(), mqtt_qos_, message->retain, message->payload.c_str(), message->payload.size(), false, mqtt_message.id_);
+    uint16_t packet_id = mqttClient_->publish(topic, mqtt_qos_, message->retain, message->payload.c_str(), message->payload.size(), false, mqtt_message.id_);
     LOG_DEBUG(F("Publishing topic %s (#%02d, retain=%d, try#%d, size %d, pid %d)"),
-              message->topic.c_str(),
+              topic,
               mqtt_message.id_,
               message->retain,
               mqtt_message.retry_count_ + 1,
               message->payload.size(),
               packet_id);
-
+    LOG_TRACE(message->payload.c_str());
     if (packet_id == 0) {
         // it failed. if we retried n times, give up. remove from queue
         if (mqtt_message.retry_count_ == (MQTT_PUBLISH_MAX_RETRY - 1)) {
-            LOG_ERROR(F("Failed to publish to %s after %d attempts"), message->topic.c_str(), mqtt_message.retry_count_ + 1);
+            LOG_ERROR(F("Failed to publish to %s after %d attempts"), topic, mqtt_message.retry_count_ + 1);
             mqtt_publish_fails_++;      // increment failure counter
             mqtt_messages_.pop_front(); // delete
             return;
         } else {
             mqtt_messages_.front().retry_count_++;
-            LOG_DEBUG(F("Failed to publish to %s. Trying again, #%d"), message->topic.c_str(), mqtt_message.retry_count_ + 1);
+            LOG_DEBUG(F("Failed to publish to %s. Trying again, #%d"), topic, mqtt_message.retry_count_ + 1);
             return; // leave on queue for next time so it gets republished
         }
     }
@@ -746,7 +745,7 @@ void Mqtt::register_mqtt_ha_binary_sensor(const __FlashStringHelper * name, cons
     doc["uniq_id"] = entity;
 
     char state_t[50];
-    snprintf_P(state_t, sizeof(state_t), PSTR("%s/%s"), hostname_.c_str(), entity);
+    snprintf_P(state_t, sizeof(state_t), PSTR("%s/%s"), mqtt_base_.c_str(), entity);
     doc["stat_t"] = state_t;
 
     EMSESP::webSettingsService.read([&](WebSettings & settings) {
@@ -814,9 +813,9 @@ void Mqtt::register_mqtt_ha_sensor(const char *                prefix,
     // state topic
     char stat_t[MQTT_TOPIC_MAX_SIZE];
     if (suffix != nullptr) {
-        snprintf_P(stat_t, sizeof(stat_t), PSTR("%s/%s_data%s"), hostname_.c_str(), device_name, uuid::read_flash_string(suffix).c_str());
+        snprintf_P(stat_t, sizeof(stat_t), PSTR("%s/%s_data%s"), mqtt_base_.c_str(), device_name, uuid::read_flash_string(suffix).c_str());
     } else {
-        snprintf_P(stat_t, sizeof(stat_t), PSTR("%s/%s_data"), hostname_.c_str(), device_name);
+        snprintf_P(stat_t, sizeof(stat_t), PSTR("%s/%s_data"), mqtt_base_.c_str(), device_name);
     }
 
     // value template

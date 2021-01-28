@@ -20,6 +20,9 @@
 #include "emsesp.h" // for send_raw_telegram() command
 
 #include "version.h" // firmware version of EMS-ESP
+#if defined(ESP32)
+#include "driver/adc.h"
+#endif
 
 #if defined(EMSESP_TEST)
 #include "test/test.h"
@@ -34,14 +37,13 @@ uuid::syslog::SyslogService System::syslog_;
 #endif
 
 // init statics
-uint32_t    System::heap_start_     = 0;
-bool        System::upload_status_  = false;
-bool        System::hide_led_       = false;
-uint8_t     System::led_gpio_       = 0;
-uint16_t    System::analog_         = 0;
-bool        System::analog_enabled_ = false;
-bool        System::syslog_enabled_ = false;
-std::string System::hostname_;
+uint32_t System::heap_start_     = 0;
+bool     System::upload_status_  = false;
+bool     System::hide_led_       = false;
+uint8_t  System::led_gpio_       = 0;
+uint16_t System::analog_         = 0;
+bool     System::analog_enabled_ = false;
+bool     System::syslog_enabled_ = false;
 
 // send on/off to a gpio pin
 // value: true = HIGH, false = LOW
@@ -219,6 +221,13 @@ void System::other_init() {
         Helpers::bool_format(settings.bool_format);
         analog_enabled_ = settings.analog_enabled;
     });
+#ifdef ESP32
+    if (analog_enabled_) {
+        adc_power_on();
+    } else {
+        adc_power_off();
+    }
+#endif
 }
 
 // init stuff. This is called when settings are changed in the web
@@ -228,8 +237,6 @@ void System::init() {
     other_init();
 
     syslog_init(); // init SysLog
-
-    EMSESP::esp8266React.getWiFiSettingsService()->read([&](WiFiSettings & settings) { hostname(settings.hostname.c_str()); });
 
     EMSESP::init_tx(); // start UART
 }
@@ -330,13 +337,14 @@ void System::send_heartbeat() {
         doc["status"] = FJSON("disconnected");
     }
 
-    doc["rssi"]       = rssi;
-    doc["uptime"]     = uuid::log::format_timestamp_ms(uuid::get_uptime_ms(), 3);
-    doc["uptime_sec"] = uuid::get_uptime_sec();
-    doc["mqttfails"]  = Mqtt::publish_fails();
-    doc["txfails"]    = EMSESP::txservice_.telegram_fail_count();
-    doc["rxfails"]    = EMSESP::rxservice_.telegram_error_count();
-    doc["freemem"]    = free_memory;
+    doc["rssi"]         = rssi;
+    doc["uptime"]       = uuid::log::format_timestamp_ms(uuid::get_uptime_ms(), 3);
+    doc["uptime_sec"]   = uuid::get_uptime_sec();
+    doc["mqtt_fails"]   = Mqtt::publish_fails();
+    doc["tx_fails"]     = EMSESP::txservice_.telegram_fail_count();
+    doc["rx_fails"]     = EMSESP::rxservice_.telegram_error_count();
+    doc["dallas_fails"] = EMSESP::sensor_fails();
+    doc["freemem"]      = free_memory;
 #if defined(ESP8266)
     doc["fragmem"] = frag_memory;
 #endif
@@ -354,9 +362,10 @@ void System::measure_analog() {
     if (!measure_last_ || (uint32_t)(uuid::get_uptime() - measure_last_) >= SYSTEM_MEASURE_ANALOG_INTERVAL) {
         measure_last_ = uuid::get_uptime();
 #if defined(ESP8266)
-        uint16_t a = analogRead(A0);
+        // uint16_t a = analogRead(A0); // 10 bit 3,2V
+        uint16_t a = ((analogRead(A0) * 27) / 8); // scale to esp32 result in mV
 #elif defined(ESP32)
-        uint16_t a = analogRead(36);
+        uint16_t a = analogRead(36); // arduino scale mV
 #else
         uint16_t a = 0; // standalone
 #endif
@@ -817,18 +826,17 @@ bool System::check_upgrade() {
 
             EMSESP::esp8266React.getMqttSettingsService()->update(
                 [&](MqttSettings & mqttSettings) {
-                    mqttSettings.host           = mqtt["ip"] | FACTORY_MQTT_HOST;
-                    mqttSettings.mqtt_format    = (mqtt["nestedjson"] ? Mqtt::Format::NESTED : Mqtt::Format::SINGLE);
-                    mqttSettings.mqtt_qos       = mqtt["qos"] | 0;
-                    mqttSettings.mqtt_retain    = mqtt["retain"];
-                    mqttSettings.username       = mqtt["user"] | "";
-                    mqttSettings.password       = mqtt["password"] | "";
-                    mqttSettings.port           = mqtt["port"] | FACTORY_MQTT_PORT;
-                    mqttSettings.clientId       = FACTORY_MQTT_CLIENT_ID;
-                    mqttSettings.enabled        = mqtt["enabled"];
-                    mqttSettings.keepAlive      = FACTORY_MQTT_KEEP_ALIVE;
-                    mqttSettings.cleanSession   = FACTORY_MQTT_CLEAN_SESSION;
-                    mqttSettings.maxTopicLength = FACTORY_MQTT_MAX_TOPIC_LENGTH;
+                    mqttSettings.host         = mqtt["ip"] | FACTORY_MQTT_HOST;
+                    mqttSettings.mqtt_format  = (mqtt["nestedjson"] ? Mqtt::Format::NESTED : Mqtt::Format::SINGLE);
+                    mqttSettings.mqtt_qos     = mqtt["qos"] | 0;
+                    mqttSettings.mqtt_retain  = mqtt["retain"];
+                    mqttSettings.username     = mqtt["user"] | "";
+                    mqttSettings.password     = mqtt["password"] | "";
+                    mqttSettings.port         = mqtt["port"] | FACTORY_MQTT_PORT;
+                    mqttSettings.clientId     = FACTORY_MQTT_CLIENT_ID;
+                    mqttSettings.enabled      = mqtt["enabled"];
+                    mqttSettings.keepAlive    = FACTORY_MQTT_KEEP_ALIVE;
+                    mqttSettings.cleanSession = FACTORY_MQTT_CLEAN_SESSION;
 
                     return StateUpdateResult::CHANGED;
                 },
@@ -949,7 +957,6 @@ bool System::command_settings(const char * value, const int8_t id, JsonObject & 
         node["client_id"]               = settings.clientId;
         node["keep_alive"]              = settings.keepAlive;
         node["clean_session"]           = Helpers::render_boolean(s, settings.cleanSession);
-        node["max_topic_length"]        = settings.maxTopicLength;
         node["publish_time_boiler"]     = settings.publish_time_boiler;
         node["publish_time_thermostat"] = settings.publish_time_thermostat;
         node["publish_time_solar"]      = settings.publish_time_solar;
@@ -1019,7 +1026,7 @@ bool System::command_info(const char * value, const int8_t id, JsonObject & json
     node["fragmem"] = ESP.getHeapFragmentation();
 #endif
 
-/* Use call system settings for all settings
+    /* Use call system settings for all settings
     node = json.createNestedObject("Settings");
 
     EMSESP::esp8266React.getMqttSettingsService()->read([&](MqttSettings & settings) {
@@ -1074,11 +1081,12 @@ bool System::command_info(const char * value, const int8_t id, JsonObject & json
         node["#read requests sent"]   = EMSESP::txservice_.telegram_read_count();
         node["#write requests sent"]  = EMSESP::txservice_.telegram_write_count();
         node["#incomplete telegrams"] = EMSESP::rxservice_.telegram_error_count();
-        node["#tx fails"]             = TxService::MAXIMUM_TX_RETRIES, EMSESP::txservice_.telegram_fail_count();
+        node["#tx fails"]             = EMSESP::txservice_.telegram_fail_count();
         node["rx line quality"]       = EMSESP::rxservice_.quality();
         node["tx line quality"]       = EMSESP::txservice_.quality();
         node["#MQTT publish fails"]   = Mqtt::publish_fails();
         node["#dallas sensors"]       = EMSESP::sensor_devices().size();
+        node["#dallas fails"]         = EMSESP::sensor_fails();
     }
 
     JsonArray devices2 = json.createNestedArray("Devices");
