@@ -2,12 +2,15 @@
 
 ### Added
 - Boiler WB Greenstar 8000
+- optional id to info command to output heatingcircuits separated
 
 ### Fixed
 - telegrams matched to masterthermostat 0x18
 - Boiler Junkers Cerapur Aero
-- multible roomcontrollers
+- multiple roomcontrollers
 - readback after write with delay (give ems-devices time to set the value)
+- Thermostat ES72/RC20, device 66 to RC20_2 command-set
+- recognize sending devices which are not in telegram 0x07
 
 ### Changed
 - split `show values` in smaller packages and separate heating circuits
@@ -20,5 +23,6 @@
 - thermostat `time` to `datetime`
 - adc scaled to mV output
 - split boiler mqtt to `data`, `data_ww`, `data_info`
+- Reduce Web UI artefact size by removing moment.js 
 
 ### Removed

@@ -17,11 +17,12 @@
  */
 
 #include "system.h"
-#include "emsesp.h" // for send_raw_telegram() command
-
+#include "emsesp.h"  // for send_raw_telegram() command
 #include "version.h" // firmware version of EMS-ESP
+
 #if defined(ESP32)
 #include "driver/adc.h"
+#include <esp_bt.h>
 #endif
 
 #if defined(EMSESP_TEST)
@@ -222,6 +223,10 @@ void System::other_init() {
         analog_enabled_ = settings.analog_enabled;
     });
 #ifdef ESP32
+    // Wifi power settings 2 - 19.5dBm, raw values 4/dBm (8-78)
+    // WiFi.setTxPower(WIFI_POWER_13dBm);
+    btStop();
+    esp_bt_controller_disable();
     if (analog_enabled_) {
         adc_power_on();
     } else {
@@ -954,6 +959,7 @@ bool System::command_settings(const char * value, const int8_t id, JsonObject & 
         node["port"]     = settings.port;
         node["username"] = settings.username;
         // node["password"]                = settings.password;
+        node["base"]                    = settings.base;
         node["client_id"]               = settings.clientId;
         node["keep_alive"]              = settings.keepAlive;
         node["clean_session"]           = Helpers::render_boolean(s, settings.cleanSession);
