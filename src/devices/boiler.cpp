@@ -1209,7 +1209,7 @@ void Boiler::process_UBADHWStatus(std::shared_ptr<const Telegram> telegram) {
     changed_ |= telegram->read_bitvalue(wWCharging_, 12, 4);
     changed_ |= telegram->read_bitvalue(wWRecharging_, 13, 4);
     changed_ |= telegram->read_bitvalue(wWTempOK_, 13, 5);
-    changed_ |= telegram->read_bitvalue(wWCircPump_, 13, 2);
+    changed_ |= telegram->read_bitvalue(wWCirc_, 13, 2);
 
     // changed_ |= telegram->read_value(wWActivated_, 20); // Activated is in 0xEA, this is something other 0/100%
     changed_ |= telegram->read_value(wWSelTemp_, 10);
@@ -1717,15 +1717,19 @@ bool Boiler::set_warmwater_circulation_mode(const char * value, const int8_t id)
         return false;
     }
 
-    if (get_toggle_fetch(EMS_TYPE_UBAParameterWW)) {
-        if (v < 7) {
-            LOG_INFO(F("Setting warm water circulation mode %dx3min"), v);
-        } else if (v == 7) {
-            LOG_INFO(F("Setting warm water circulation mode continuos"));
-        } else {
-            return false;
-        }
-        write_command(EMS_TYPE_UBAParameterWW, 6, v, EMS_TYPE_UBAParameterWW);
+    if (v < 7) {
+        LOG_INFO(F("Setting warm water circulation mode %dx3min"), v);
+    } else if (v == 7) {
+        LOG_INFO(F("Setting warm water circulation mode continuos"));
+    } else {
+        LOG_WARNING(F("Set warm water circulation mode: Invalid value"));
+        return false;
+    }
+
+    if (get_toggle_fetch(EMS_TYPE_UBAParameterWWPlus)) {
+        write_command(EMS_TYPE_UBAParameterWWPlus, 11, v, EMS_TYPE_UBAParameterWWPlus);
+    } else {
+        write_command(EMS_TYPE_UBAParameterWW, 7, v, EMS_TYPE_UBAParameterWW);
     }
 
     return true;
