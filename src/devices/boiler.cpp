@@ -26,6 +26,12 @@ uuid::log::Logger Boiler::logger_{F_(boiler), uuid::log::Facility::CONSOLE};
 
 Boiler::Boiler(uint8_t device_type, int8_t device_id, uint8_t product_id, const std::string & version, const std::string & name, uint8_t flags, uint8_t brand)
     : EMSdevice(device_type, device_id, product_id, version, name, flags, brand) {
+
+    // register values only for master boiler/cascade module
+    if (device_id != EMSdevice::EMS_DEVICE_ID_BOILER) {
+        return;
+    }
+
     reserve_mem(20); // reserve some space for the telegram registries, to avoid memory fragmentation
 
     LOG_DEBUG(F("Adding new Boiler with device ID 0x%02X"), device_id);
@@ -1068,8 +1074,8 @@ void Boiler::process_UBAMonitorSlowPlus(std::shared_ptr<const Telegram> telegram
 void Boiler::process_UBAParametersPlus(std::shared_ptr<const Telegram> telegram) {
     changed_ |= telegram->read_value(heatingActivated_, 0);
     changed_ |= telegram->read_value(heatingTemp_, 1);
-    changed_ |= telegram->read_value(burnMaxPower_, 6);
-    changed_ |= telegram->read_value(burnMinPower_, 7);
+    changed_ |= telegram->read_value(burnMaxPower_, 4);
+    changed_ |= telegram->read_value(burnMinPower_, 5);
     changed_ |= telegram->read_value(boilHystOff_, 8);
     changed_ |= telegram->read_value(boilHystOn_, 9);
     changed_ |= telegram->read_value(burnMinPeriod_, 10);
@@ -1093,8 +1099,8 @@ void Boiler::process_UBADHWStatus(std::shared_ptr<const Telegram> telegram) {
     changed_ |= telegram->read_value(wWCurTemp_, 1);
     changed_ |= telegram->read_value(wWCurTemp2_, 3);
 
-    changed_ |= telegram->read_value(wWWorkM_, 17, 3);  // force to 3 bytes
-    changed_ |= telegram->read_value(wWStarts_, 14, 3); // force to 3 bytes
+    changed_ |= telegram->read_value(wWWorkM_, 14, 3);  // force to 3 bytes
+    changed_ |= telegram->read_value(wWStarts_, 17, 3); // force to 3 bytes
 
     changed_ |= telegram->read_bitvalue(wWOneTime_, 12, 2);
     changed_ |= telegram->read_bitvalue(wWDisinfecting_, 12, 3);
@@ -1265,10 +1271,12 @@ bool Boiler::set_flow_temp(const char * value, const int8_t id) {
     }
 
     LOG_INFO(F("Setting boiler flow temperature to %d C"), v);
-    // some boiler have it in 0x1A, some in 0x35, but both telegrams are sometimes writeonly
-    write_command(0x35, 3, v);
-    write_command(EMS_TYPE_UBASetPoints, 0, v, EMS_TYPE_UBASetPoints);
-    // write_command(0x35, 3, v, 0x35);
+    if (get_toggle_fetch(EMS_TYPE_UBAParametersPlus)) {
+        write_command(EMS_TYPE_UBAParameterWWPlus, 6, v, EMS_TYPE_UBAParameterWWPlus);
+    } else {
+        write_command(EMS_TYPE_UBAFlags, 3, v, 0x34);                          // for i9000, see #397
+        write_command(EMS_TYPE_UBAParameterWW, 2, v, EMS_TYPE_UBAParameterWW); // read seltemp back
+    }
 
     return true;
 }
@@ -1319,7 +1327,7 @@ bool Boiler::set_min_power(const char * value, const int8_t id) {
 
     LOG_INFO(F("Setting boiler min power to %d %%"), v);
     if (get_toggle_fetch(EMS_TYPE_UBAParametersPlus)) {
-        write_command(EMS_TYPE_UBAParametersPlus, 7, v, EMS_TYPE_UBAParametersPlus);
+        write_command(EMS_TYPE_UBAParametersPlus, 5, v, EMS_TYPE_UBAParametersPlus);
     } else {
         write_command(EMS_TYPE_UBAParameters, 3, v, EMS_TYPE_UBAParameters);
     }
@@ -1337,7 +1345,7 @@ bool Boiler::set_max_power(const char * value, const int8_t id) {
 
     LOG_INFO(F("Setting boiler max power to %d %%"), v);
     if (get_toggle_fetch(EMS_TYPE_UBAParametersPlus)) {
-        write_command(EMS_TYPE_UBAParametersPlus, 6, v, EMS_TYPE_UBAParametersPlus);
+        write_command(EMS_TYPE_UBAParametersPlus, 4, v, EMS_TYPE_UBAParametersPlus);
     } else {
         write_command(EMS_TYPE_UBAParameters, 2, v, EMS_TYPE_UBAParameters);
     }

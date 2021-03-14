@@ -1,7 +1,8 @@
 # Changelog
 
 ### Added
-- Boiler WB Greenstar 8000
+- Boiler WB Greenstar 8000 (195) and Cascade Modul MC400 (210)
+- show cascaded boilers
 - optional id to info command to output heatingcircuits separated
 - Reset to factory setting with PButton (io0 to GND for >9 sec)
 
@@ -16,6 +17,9 @@
 - fix mixerTemp and tankMiddleTemp (PR #714 @joanwa)
 - icon update for pumps
 - add mixer wiring naming from documentation
+- wwtemp feedback and ems+ command
+- fix for HA topics with invalid command formats - #728
+- fix ems+ values #723, #732
 
 ### Changed
 - split `show values` in smaller packages and separate heating circuits
