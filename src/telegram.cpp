@@ -1,5 +1,5 @@
 /*
- * EMS-ESP - https://github.com/proddy/EMS-ESP
+ * EMS-ESP - https://github.com/emsesp/EMS-ESP
  * Copyright 2020  Paul Derbyshire
  * 
  * This program is free software: you can redistribute it and/or modify
@@ -171,10 +171,10 @@ void RxService::add(uint8_t * data, uint8_t length) {
     // work out depending on the type, where the data message block starts and the message length
     // EMS 1 has type_id always in data[2], if it gets a ems+ inquiry it will reply with FF but short length
     // i.e. sending 0B A1 FF 00 01 D8 20 CRC to a MM10 Mixer (ems1.0), the reply is 21 0B FF 00 CRC
-    // see: https://github.com/proddy/EMS-ESP/issues/380#issuecomment-633663007
+    // see: https://github.com/emsesp/EMS-ESP/issues/380#issuecomment-633663007
     if (data[2] != 0xFF || length < 6) {
         // EMS 1.0
-        // also handle F7, F9 as EMS 1.0, see https://github.com/proddy/EMS-ESP/issues/109#issuecomment-492781044
+        // also handle F7, F9 as EMS 1.0, see https://github.com/emsesp/EMS-ESP/issues/109#issuecomment-492781044
         type_id        = data[2];
         message_data   = data + 4;
         message_length = length - 5;
@@ -482,7 +482,7 @@ void TxService::add(uint8_t operation, const uint8_t * data, const uint8_t lengt
         if (dest & 0x80) {
             operation = Telegram::Operation::TX_READ;
         } else {
-            operation = Telegram::Operation::TX_WRITE;
+            operation   = Telegram::Operation::TX_WRITE;
             validate_id = type_id;
         }
         EMSESP::set_read_id(type_id);
@@ -563,9 +563,10 @@ void TxService::retry_tx(const uint8_t operation, const uint8_t * data, const ui
         reset_retry_count();             // give up
         increment_telegram_fail_count(); // another Tx fail
 
-        LOG_ERROR(F("Last Tx %s operation failed after %d retries. Ignoring request."),
+        LOG_ERROR(F("Last Tx %s operation failed after %d retries. Ignoring request: %s"),
                   (operation == Telegram::Operation::TX_WRITE) ? F("Write") : F("Read"),
-                  MAXIMUM_TX_RETRIES);
+                  MAXIMUM_TX_RETRIES,
+                  telegram_last_->to_string().c_str());
         return;
     }
 

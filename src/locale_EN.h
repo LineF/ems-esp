@@ -1,5 +1,5 @@
 /*
- * EMS-ESP - https://github.com/proddy/EMS-ESP
+ * EMS-ESP - https://github.com/emsesp/EMS-ESP
  * Copyright 2020  Paul Derbyshire
  *
  * This program is free software: you can redistribute it and/or modify
@@ -200,6 +200,7 @@ MAKE_PSTR(burnStarts, "Burner starts")
 MAKE_PSTR(burnWorkMin, "Burner active time")
 MAKE_PSTR(heatWorkMin, "Heating active time")
 MAKE_PSTR(UBAuptime, "Boiler total uptime")
+MAKE_PSTR(wWMaxPower, "Warm water max power")
 
 MAKE_PSTR(upTimeControl, "Operating time control")
 MAKE_PSTR(upTimeCompHeating, "Operating time compressor heating")

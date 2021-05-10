@@ -1,5 +1,5 @@
 /*
- * EMS-ESP - https://github.com/proddy/EMS-ESP
+ * EMS-ESP - https://github.com/emsesp/EMS-ESP
  * Copyright 2020  Paul Derbyshire
  *
  * This program is free software: you can redistribute it and/or modify
@@ -46,6 +46,11 @@ class Boiler : public EMSdevice {
   private:
     static uuid::log::Logger logger_;
 
+    // specific boiler characteristics, stripping the top 4 bits
+    inline uint8_t model() const {
+        return (flags() & 0x0F);
+    }
+
     void register_mqtt_ha_config();
     void register_mqtt_ha_config_ww();
     void check_active(const bool force = false);
@@ -79,8 +84,8 @@ class Boiler : public EMSdevice {
     uint8_t wWComfort_          = EMS_VALUE_UINT_NOTSET; // WW comfort mode
 
     // MC10Status
-    uint16_t mixerTemp_         = EMS_VALUE_USHORT_NOTSET; // mixer temperature
-    uint16_t tankMiddleTemp_    = EMS_VALUE_USHORT_NOTSET; // tank middle temperature (TS3)
+    uint16_t mixerTemp_      = EMS_VALUE_USHORT_NOTSET; // mixer temperature
+    uint16_t tankMiddleTemp_ = EMS_VALUE_USHORT_NOTSET; // tank middle temperature (TS3)
 
     // UBAMonitorFast - 0x18 on EMS1
     uint8_t  selFlowTemp_       = EMS_VALUE_UINT_NOTSET;   // Selected flow temperature
@@ -105,14 +110,14 @@ class Boiler : public EMSdevice {
     uint32_t lastCodeDate_      = 0;
 
     // UBAMonitorSlow - 0x19 on EMS1
-    int16_t  outdoorTemp_     = EMS_VALUE_SHORT_NOTSET;  // Outside temperature
-    uint16_t boilTemp_        = EMS_VALUE_USHORT_NOTSET; // Boiler temperature
-    uint16_t exhaustTemp_     = EMS_VALUE_USHORT_NOTSET; // Exhaust temperature
-    uint8_t  heatingPumpMod_  = EMS_VALUE_UINT_NOTSET;   // Heating pump modulation %
-    uint32_t burnStarts_      = EMS_VALUE_ULONG_NOTSET;  // # burner restarts
-    uint32_t burnWorkMin_     = EMS_VALUE_ULONG_NOTSET;  // Total burner operating time
-    uint32_t heatWorkMin_     = EMS_VALUE_ULONG_NOTSET;  // Total heat operating time
-    uint16_t switchTemp_      = EMS_VALUE_USHORT_NOTSET; // Switch temperature
+    int16_t  outdoorTemp_    = EMS_VALUE_SHORT_NOTSET;  // Outside temperature
+    uint16_t boilTemp_       = EMS_VALUE_USHORT_NOTSET; // Boiler temperature
+    uint16_t exhaustTemp_    = EMS_VALUE_USHORT_NOTSET; // Exhaust temperature
+    uint8_t  heatingPumpMod_ = EMS_VALUE_UINT_NOTSET;   // Heating pump modulation %
+    uint32_t burnStarts_     = EMS_VALUE_ULONG_NOTSET;  // # burner restarts
+    uint32_t burnWorkMin_    = EMS_VALUE_ULONG_NOTSET;  // Total burner operating time
+    uint32_t heatWorkMin_    = EMS_VALUE_ULONG_NOTSET;  // Total heat operating time
+    uint16_t switchTemp_     = EMS_VALUE_USHORT_NOTSET; // Switch temperature
 
     // UBAMonitorWW
     uint8_t  wWSetTemp_      = EMS_VALUE_UINT_NOTSET;   // Warm Water set temperature
@@ -128,6 +133,7 @@ class Boiler : public EMSdevice {
     uint8_t  wWCurFlow_      = EMS_VALUE_UINT_NOTSET;   // Warm Water current flow temp in l/min
     uint8_t  wWType_         = EMS_VALUE_UINT_NOTSET;   // 0-off, 1-flow, 2-flowbuffer, 3-buffer, 4-layered buffer
     uint8_t  wWActive_       = EMS_VALUE_BOOL_NOTSET;
+    uint8_t  wWMaxPower_     = EMS_VALUE_UINT_NOTSET;   // Warm Water maximum power
 
     // UBATotalUptime
     uint32_t UBAuptime_ = EMS_VALUE_ULONG_NOTSET; // Total UBA working hours
@@ -150,9 +156,9 @@ class Boiler : public EMSdevice {
     uint8_t wWSetPumpPower_ = EMS_VALUE_UINT_NOTSET; // ww pump speed/power?
 
     // other internal calculated params
-    uint8_t tapwaterActive_         = EMS_VALUE_BOOL_NOTSET; // Hot tap water is on/off
-    uint8_t heatingActive_          = EMS_VALUE_BOOL_NOTSET; // Central heating is on/off
-    uint8_t heatingPump2Mod_        = EMS_VALUE_UINT_NOTSET; // heating pump 2 modulation from 0xE3 (heating pumps)
+    uint8_t tapwaterActive_  = EMS_VALUE_BOOL_NOTSET; // Hot tap water is on/off
+    uint8_t heatingActive_   = EMS_VALUE_BOOL_NOTSET; // Central heating is on/off
+    uint8_t heatingPump2Mod_ = EMS_VALUE_UINT_NOTSET; // heating pump 2 modulation from 0xE3 (heating pumps)
 
     // UBAInformation
     uint32_t upTimeControl_             = EMS_VALUE_ULONG_NOTSET; // Operating time control
@@ -201,9 +207,10 @@ class Boiler : public EMSdevice {
     void process_UBAMaintenanceStatus(std::shared_ptr<const Telegram> telegram);
     void process_UBAMaintenanceData(std::shared_ptr<const Telegram> telegram);
     void process_UBAErrorMessage(std::shared_ptr<const Telegram> telegram);
-    void process_UBADHWStatus(std::shared_ptr<const Telegram> telegram);
+    void process_UBAMonitorWWPlus(std::shared_ptr<const Telegram> telegram);
     void process_UBAInformation(std::shared_ptr<const Telegram> telegram);
     void process_UBAEnergySupplied(std::shared_ptr<const Telegram> telegram);
+    void process_UBASettingsWW(std::shared_ptr<const Telegram> telegram);
 
     // commands - none of these use the additional id parameter
     bool set_warmwater_mode(const char * value, const int8_t id);

@@ -1,5 +1,5 @@
 /*
- * EMS-ESP - https://github.com/proddy/EMS-ESP
+ * EMS-ESP - https://github.com/emsesp/EMS-ESP
  * Copyright 2020  Paul Derbyshire
  * 
  * This program is free software: you can redistribute it and/or modify
@@ -407,7 +407,11 @@ uint16_t Helpers::atoint(const char * value) {
 // rounds a number to 2 decimal places
 // example: round2(3.14159) -> 3.14
 double Helpers::round2(double value) {
-    return (int)(value * 100 + 0.5) / 100.0;
+    if (value >= 0) {
+        return (int)(value * 100 + 0.5) / 100.0;
+    } else {
+        return (int)(value * 100 - 0.5) / 100.0;
+    }
 }
 
 bool Helpers::check_abs(const int32_t i) {

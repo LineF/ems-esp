@@ -1,5 +1,5 @@
 /*
- * EMS-ESP - https://github.com/proddy/EMS-ESP
+ * EMS-ESP - https://github.com/emsesp/EMS-ESP
  * Copyright 2020  Paul Derbyshire
  *
  * This program is free software: you can redistribute it and/or modify
@@ -110,7 +110,8 @@ class Thermostat : public EMSdevice {
             FLOWOFFSET,
             MINFLOW,
             MAXFLOW,
-            ROOMINFLUENCE
+            ROOMINFLUENCE,
+            ON
         };
 
         // for sorting based on hc number
@@ -181,13 +182,13 @@ class Thermostat : public EMSdevice {
     uint8_t  floordrystatus_     = EMS_VALUE_UINT_NOTSET;
     uint8_t  floordrytemp_       = EMS_VALUE_UINT_NOTSET;
 
-    uint8_t wwExtra1_       = EMS_VALUE_UINT_NOTSET; // wwExtra active for wwSystem 1
-    uint8_t wwExtra2_       = EMS_VALUE_UINT_NOTSET;
-    uint8_t wwMode_         = EMS_VALUE_UINT_NOTSET;
-    uint8_t wwCircPump_     = EMS_VALUE_UINT_NOTSET;
-    uint8_t wwCircMode_     = EMS_VALUE_UINT_NOTSET;
-    uint8_t wwSetTemp_      = EMS_VALUE_UINT_NOTSET;
-    uint8_t wwSetTempLow_   = EMS_VALUE_UINT_NOTSET;
+    uint8_t wwExtra1_     = EMS_VALUE_UINT_NOTSET; // wwExtra active for wwSystem 1
+    uint8_t wwExtra2_     = EMS_VALUE_UINT_NOTSET;
+    uint8_t wwMode_       = EMS_VALUE_UINT_NOTSET;
+    uint8_t wwCircPump_   = EMS_VALUE_UINT_NOTSET;
+    uint8_t wwCircMode_   = EMS_VALUE_UINT_NOTSET;
+    uint8_t wwSetTemp_    = EMS_VALUE_UINT_NOTSET;
+    uint8_t wwSetTempLow_ = EMS_VALUE_UINT_NOTSET;
 
     std::vector<std::shared_ptr<HeatingCircuit>> heating_circuits_; // each thermostat can have multiple heating circuits
 
@@ -205,7 +206,7 @@ class Thermostat : public EMSdevice {
     static constexpr uint8_t EMS_OFFSET_RC20Set_mode               = 23; // position of thermostat mode
     static constexpr uint8_t EMS_OFFSET_RC20Set_temp               = 28; // position of thermostat setpoint temperature
 
-    static constexpr uint8_t EMS_OFFSET_RC20_2_Set_mode       = 3; // ES72 - see https://github.com/proddy/EMS-ESP/issues/334
+    static constexpr uint8_t EMS_OFFSET_RC20_2_Set_mode       = 3; // ES72 - see https://github.com/emsesp/EMS-ESP/issues/334
     static constexpr uint8_t EMS_OFFSET_RC20_2_Set_temp_night = 1; // ES72
     static constexpr uint8_t EMS_OFFSET_RC20_2_Set_temp_day   = 2; // ES72
 
@@ -293,6 +294,7 @@ class Thermostat : public EMSdevice {
     void process_RC20Set_2(std::shared_ptr<const Telegram> telegram);
     void process_RC10Monitor(std::shared_ptr<const Telegram> telegram);
     void process_RC10Set(std::shared_ptr<const Telegram> telegram);
+    void process_CRFMonitor(std::shared_ptr<const Telegram> telegram);
     void process_RC300Monitor(std::shared_ptr<const Telegram> telegram);
     void process_RC300Set(std::shared_ptr<const Telegram> telegram);
     void process_RC300Summer(std::shared_ptr<const Telegram> telegram);
